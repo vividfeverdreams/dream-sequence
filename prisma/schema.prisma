@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  sessions     DJSession[]
+  auditEvents  AuditEvent[]
+}
+
+model DJSession {
+  id                String             @id @default(cuid())
+  code              String             @unique
+  userId            String
+  name              String
+  artistName        String
+  trackName         String
+  creativeBible     String
+  allowedMotifs     String
+  bannedTerms       String
+  colorPalette      String
+  motionRules       String
+  basePrompt        String
+  imageReferenceUrl String?
+  smsNumber         String?
+  status            String             @default("draft")
+  venueSafeMode     Boolean            @default(true)
+  autoSelectEnabled Boolean            @default(true)
+  startedAt         DateTime?
+  stoppedAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions       PromptSubmission[]
+  visualAssets      VisualAsset[]
+  renderJobs        RenderJob[]
+  playbackState     PlaybackState?
+  auditEvents       AuditEvent[]
+
+  @@index([userId, createdAt])
+}
+
+model PromptSubmission {
+  id                String            @id @default(cuid())
+  sessionId         String
+  source            String
+  sender            String?
+  senderFingerprint String
+  messageSid        String?           @unique
+  rawText           String
+  normalizedText    String
+  status            String            @default("submitted")
+  approvalReason    String?
+  selectedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  session           DJSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  moderationResult  ModerationResult?
+  rankingResult     RankingResult?
+  renderJobs        RenderJob[]
+  visualAssets      VisualAsset[]
+
+  @@index([sessionId, createdAt])
+  @@index([sessionId, status])
+}
+
+model ModerationResult {
+  id           String           @id @default(cuid())
+  submissionId String           @unique
+  decision     String
+  score        Int
+  flags        String
+  explanation  String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  submission   PromptSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+model RankingResult {
+  id              String           @id @default(cuid())
+  submissionId    String           @unique
+  score           Int
+  noveltyScore    Int
+  cohesionScore   Int
+  remixDeltaScore Int
+  winningPrompt   String
+  explanation     String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  submission      PromptSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+model VisualAsset {
+  id                 String            @id @default(cuid())
+  sessionId          String
+  sourceSubmissionId String?
+  kind               String
+  title              String
+  promptText         String
+  storagePath        String?
+  publicUrl          String?
+  thumbnailUrl       String?
+  sourceVideoId      String?
+  durationSeconds    Int               @default(8)
+  width              Int               @default(1280)
+  height             Int               @default(720)
+  status             String            @default("processing")
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  session            DJSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sourceSubmission   PromptSubmission? @relation(fields: [sourceSubmissionId], references: [id], onDelete: SetNull)
+  sourceRenderJobs   RenderJob[]       @relation("RenderSource")
+  sourceRenderJob    RenderJob?        @relation("RenderOutput")
+  currentInPlayback  PlaybackState[]   @relation("CurrentPlaybackAsset")
+  nextInPlayback     PlaybackState[]   @relation("NextPlaybackAsset")
+  fallbackInPlayback PlaybackState[]   @relation("FallbackPlaybackAsset")
+
+  @@index([sessionId, createdAt])
+}
+
+model RenderJob {
+  id            String            @id @default(cuid())
+  sessionId     String
+  submissionId  String?
+  sourceAssetId String?
+  outputAssetId String?           @unique
+  mode          String
+  status        String            @default("queued")
+  openaiVideoId String?           @unique
+  promptText    String
+  failureReason String?
+  lastPolledAt  DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  session       DJSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  submission    PromptSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  sourceAsset   VisualAsset?      @relation("RenderSource", fields: [sourceAssetId], references: [id], onDelete: SetNull)
+  outputAsset   VisualAsset?      @relation("RenderOutput", fields: [outputAssetId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, status])
+}
+
+model PlaybackState {
+  id               String       @id @default(cuid())
+  sessionId        String       @unique
+  currentAssetId   String?
+  nextAssetId      String?
+  fallbackAssetId  String?
+  status           String       @default("idle")
+  emergencyPaused  Boolean      @default(false)
+  crossfadeSeconds Float        @default(2.0)
+  lastTransitionAt DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  session          DJSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  currentAsset     VisualAsset? @relation("CurrentPlaybackAsset", fields: [currentAssetId], references: [id], onDelete: SetNull)
+  nextAsset        VisualAsset? @relation("NextPlaybackAsset", fields: [nextAssetId], references: [id], onDelete: SetNull)
+  fallbackAsset    VisualAsset? @relation("FallbackPlaybackAsset", fields: [fallbackAssetId], references: [id], onDelete: SetNull)
+}
+
+model AuditEvent {
+  id        String     @id @default(cuid())
+  sessionId String?
+  userId    String?
+  type      String
+  summary   String
+  details   String?
+  createdAt DateTime   @default(now())
+  session   DJSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, createdAt])
+  @@index([type, createdAt])
+}
