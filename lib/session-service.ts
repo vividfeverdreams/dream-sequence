@@ -202,7 +202,7 @@ export async function completePlaybackTransition(sessionId: string) {
     return null;
   }
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: any) => {
     if (playback.currentAssetId) {
       await tx.visualAsset.update({
         where: {

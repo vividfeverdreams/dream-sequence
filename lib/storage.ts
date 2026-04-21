@@ -1,7 +1,5 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { env } from "@/lib/env";
-
 const demoLoopUrl = process.env.DEMO_LOOP_URL ?? "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 const storageRoot = path.join(process.cwd(), "storage", "videos");
 
@@ -20,7 +18,7 @@ export async function persistVideoAsset(assetId: string, data: Buffer) {
 
   return {
     storagePath: absolutePath,
-    publicUrl: `${env.appUrl}/api/assets/${assetId}`
+    publicUrl: `/api/assets/${assetId}`
   };
 }
 

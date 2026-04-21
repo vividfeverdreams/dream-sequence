@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import { db } from "@/lib/db";
-import { env, hasOpenAiCredentials } from "@/lib/env";
+import { env } from "@/lib/env";
+import { getEffectiveOpenAiApiKeyForUser } from "@/lib/openai-key-store";
 import { persistVideoAsset, getDemoLoopUrl, getStoredVideoPath } from "@/lib/storage";
 
 type StartRenderInput = {
@@ -8,6 +9,7 @@ type StartRenderInput = {
   prompt: string;
   sourceVideoId?: string | null;
   imageReferenceUrl?: string | null;
+  openAiApiKey?: string | null;
 };
 
 type StartedRender =
@@ -23,7 +25,7 @@ type StartedRender =
     };
 
 export async function startVideoRender(input: StartRenderInput): Promise<StartedRender> {
-  if (!hasOpenAiCredentials()) {
+  if (!input.openAiApiKey) {
     return {
       kind: "demo",
       videoId: `demo_${Date.now()}`,
@@ -32,8 +34,8 @@ export async function startVideoRender(input: StartRenderInput): Promise<Started
     };
   }
 
-  if (input.mode === "seed" || !input.sourceVideoId) {
-    const created = await callOpenAiVideoApi<{ id: string }>("https://api.openai.com/v1/videos", {
+  if (input.mode === "seed" || !input.sourceVideoId || !input.sourceVideoId.startsWith("video_")) {
+    const created = await callOpenAiVideoApi<{ id: string }>("https://api.openai.com/v1/videos", input.openAiApiKey, {
       method: "POST",
       body: JSON.stringify({
         model: env.openAiVideoModel,
@@ -49,12 +51,19 @@ export async function startVideoRender(input: StartRenderInput): Promise<Started
     };
   }
 
-  const payload = await callOpenAiVideoApi<{ id: string }>(`https://api.openai.com/v1/videos/${input.sourceVideoId}/remix`, {
-    method: "POST",
-    body: JSON.stringify({
-      prompt: input.prompt
-    })
-  });
+  const payload = await callOpenAiVideoApi<{ id: string }>(
+    "https://api.openai.com/v1/videos/edits",
+    input.openAiApiKey,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        video: {
+          id: input.sourceVideoId
+        },
+        prompt: input.prompt
+      })
+    }
+  );
 
   return {
     kind: "live",
@@ -81,7 +90,11 @@ export async function reconcileRenderJob(renderJobId: string) {
     return null;
   }
 
-  if (!hasOpenAiCredentials()) {
+  const apiKey = renderJob.session?.userId
+    ? await getEffectiveOpenAiApiKeyForUser(String(renderJob.session.userId))
+    : null;
+
+  if (!apiKey) {
     await markRenderJobReady(renderJob.id, renderJob.outputAsset.id, {
       publicUrl: getDemoLoopUrl(),
       storagePath: null,
@@ -91,17 +104,50 @@ export async function reconcileRenderJob(renderJobId: string) {
   }
 
   if (!renderJob.openaiVideoId) {
-    return null;
+    await db.renderJob.update({
+      where: {
+        id: renderJob.id
+      },
+      data: {
+        status: "failed",
+        failureReason: "Render job never received an OpenAI video id.",
+        lastPolledAt: new Date()
+      }
+    });
+
+    await db.visualAsset.update({
+      where: {
+        id: renderJob.outputAsset.id
+      },
+      data: {
+        status: "failed"
+      }
+    });
+
+    if (renderJob.submissionId) {
+      await db.promptSubmission.update({
+        where: {
+          id: renderJob.submissionId
+        },
+        data: {
+          status: "approved",
+          selectedAt: null
+        }
+      });
+    }
+
+    return "failed";
   }
 
   const status = await callOpenAiVideoApi<{ status: "queued" | "in_progress" | "completed" | "failed" }>(
-    `https://api.openai.com/v1/videos/${renderJob.openaiVideoId}`
+    `https://api.openai.com/v1/videos/${renderJob.openaiVideoId}`,
+    apiKey
   );
 
   if (status.status === "completed") {
     const response = await fetch(`https://api.openai.com/v1/videos/${renderJob.openaiVideoId}/content`, {
       headers: {
-        Authorization: `Bearer ${env.openAiApiKey}`
+        Authorization: `Bearer ${apiKey}`
       }
     });
 
@@ -178,7 +224,7 @@ async function markRenderJobReady(
     return;
   }
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: any) => {
     await tx.visualAsset.update({
       where: {
         id: assetId
@@ -252,18 +298,51 @@ export async function readStoredAsset(assetId: string) {
   return readFile(filePath);
 }
 
-async function callOpenAiVideoApi<T>(url: string, init?: RequestInit) {
+async function callOpenAiVideoApi<T>(url: string, apiKey: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
     headers: {
-      Authorization: `Bearer ${env.openAiApiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       ...(init?.headers ?? {})
     }
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI video request failed with ${response.status}`);
+    const errorText = await response.text();
+    let parsedMessage: string | null = null;
+
+    try {
+      const parsed = JSON.parse(errorText) as {
+        error?: {
+          message?: string;
+          code?: string | null;
+        };
+      };
+
+      const message = parsed.error?.message?.trim();
+      const code = parsed.error?.code?.trim();
+
+      if (message) {
+        parsedMessage = code
+          ? `OpenAI video request failed: ${message} (${code})`
+          : `OpenAI video request failed: ${message}`;
+      }
+    } catch {
+      // Fall through to a plain-text fallback if the body is not JSON.
+    }
+
+    if (parsedMessage) {
+      throw new Error(parsedMessage);
+    }
+
+    const fallbackMessage = errorText.trim();
+
+    throw new Error(
+      fallbackMessage
+        ? `OpenAI video request failed with ${response.status}: ${fallbackMessage}`
+        : `OpenAI video request failed with ${response.status}`
+    );
   }
 
   return (await response.json()) as T;

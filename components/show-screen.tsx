@@ -5,9 +5,10 @@ import type { SessionSnapshot } from "@/lib/snapshot";
 
 type ShowScreenProps = {
   initialSnapshot: NonNullable<SessionSnapshot>;
+  openAiConfigured: boolean;
 };
 
-export function ShowScreen({ initialSnapshot }: ShowScreenProps) {
+export function ShowScreen({ initialSnapshot, openAiConfigured }: ShowScreenProps) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [fadeNext, setFadeNext] = useState(false);
   const [handledNextAssetId, setHandledNextAssetId] = useState<string | null>(null);
@@ -17,7 +18,9 @@ export function ShowScreen({ initialSnapshot }: ShowScreenProps) {
   const playback = session.playbackState;
   const currentAsset = playback?.currentAsset ?? null;
   const nextAsset = playback?.nextAsset ?? null;
-  const shouldRenderNext = Boolean(nextAsset?.publicUrl);
+  const currentAssetUrl = resolvePlaybackUrl(currentAsset?.publicUrl ?? null);
+  const nextAssetUrl = resolvePlaybackUrl(nextAsset?.publicUrl ?? null);
+  const shouldRenderNext = Boolean(nextAssetUrl);
 
   useEffect(() => {
     const stream = new EventSource(`/api/sessions/${session.id}/stream`);
@@ -59,18 +62,20 @@ export function ShowScreen({ initialSnapshot }: ShowScreenProps) {
   }, [handledNextAssetId, nextAsset?.id, session.id]);
 
   const debugLabel = !currentAsset
-    ? "Holding for first completed loop"
+    ? session.status === "draft"
+      ? "Start the session from the dashboard to seed the first loop"
+      : "Holding for first completed loop"
     : nextAsset
       ? "Crossfade armed"
       : "Live loop stable";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-black">
-      {currentAsset?.publicUrl ? (
+      {currentAssetUrl ? (
         <video
           key={currentAsset.id}
           className="absolute inset-0 h-full w-full object-cover"
-          src={currentAsset.publicUrl}
+          src={currentAssetUrl}
           autoPlay
           loop
           muted
@@ -80,14 +85,14 @@ export function ShowScreen({ initialSnapshot }: ShowScreenProps) {
         <div className="absolute inset-0 subtle-grid bg-aurora" />
       )}
 
-      {shouldRenderNext && nextAsset?.publicUrl ? (
+      {shouldRenderNext && nextAssetUrl ? (
         <video
           key={nextAsset.id}
           ref={nextVideoRef}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[2200ms] ${
             fadeNext ? "opacity-100" : "opacity-0"
           }`}
-          src={nextAsset.publicUrl}
+          src={nextAssetUrl}
           autoPlay
           loop
           muted
@@ -102,6 +107,7 @@ export function ShowScreen({ initialSnapshot }: ShowScreenProps) {
           <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-plasma">{session.artistName}</p>
           <p className="mt-2 text-2xl font-semibold text-white">{session.trackName}</p>
           <p className="mt-3 text-sm text-white/70">{debugLabel}</p>
+          {!openAiConfigured ? <p className="mt-2 text-xs uppercase tracking-[0.22em] text-amber-200/90">Demo loop fallback active</p> : null}
         </div>
 
         <div className="rounded-4xl border border-white/10 bg-black/25 px-5 py-4 text-right backdrop-blur">
@@ -113,4 +119,29 @@ export function ShowScreen({ initialSnapshot }: ShowScreenProps) {
       </div>
     </main>
   );
+}
+
+function resolvePlaybackUrl(url: string | null) {
+  if (!url) {
+    return null;
+  }
+
+  if (typeof window === "undefined") {
+    return url;
+  }
+
+  try {
+    const resolved = new URL(url, window.location.origin);
+
+    if (
+      resolved.hostname === "localhost" &&
+      resolved.pathname.startsWith("/api/assets/")
+    ) {
+      return `${window.location.origin}${resolved.pathname}`;
+    }
+
+    return resolved.toString();
+  } catch {
+    return url;
+  }
 }

@@ -1,18 +1,23 @@
 import OpenAI from "openai";
-import { env, hasOpenAiCredentials } from "@/lib/env";
+import { env } from "@/lib/env";
 
-let singleton: OpenAI | null = null;
+const clients = new Map<string, OpenAI>();
 
-export function getOpenAiClient() {
-  if (!hasOpenAiCredentials()) {
+export function getOpenAiClient(apiKey?: string | null) {
+  const resolvedApiKey = apiKey?.trim() || env.openAiApiKey;
+
+  if (!resolvedApiKey) {
     return null;
   }
 
-  if (!singleton) {
-    singleton = new OpenAI({
-      apiKey: env.openAiApiKey
-    });
+  if (!clients.has(resolvedApiKey)) {
+    clients.set(
+      resolvedApiKey,
+      new OpenAI({
+        apiKey: resolvedApiKey
+      })
+    );
   }
 
-  return singleton;
+  return clients.get(resolvedApiKey) ?? null;
 }

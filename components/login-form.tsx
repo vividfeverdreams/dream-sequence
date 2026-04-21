@@ -1,40 +1,44 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
 
 export function LoginForm() {
-  const router = useRouter();
   const [email, setEmail] = useState("dj@example.com");
   const [password, setPassword] = useState("crowdremix-demo");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setIsSubmitting(true);
 
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        email,
-        password
-      })
-    });
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email,
+          password
+        })
+      });
 
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(payload?.error ?? "Unable to sign in.");
-      return;
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(payload?.error ?? "Unable to sign in.");
+        return;
+      }
+
+      // Force a full navigation so the freshly set auth cookie is picked up reliably.
+      window.location.assign("/dashboard");
+    } catch {
+      setError("Unable to sign in.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    startTransition(() => {
-      router.push("/dashboard");
-      router.refresh();
-    });
   }
 
   return (
@@ -76,10 +80,10 @@ export function LoginForm() {
 
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isSubmitting}
           className="w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isPending ? "Signing In..." : "Sign In"}
+          {isSubmitting ? "Signing In..." : "Sign In"}
         </button>
       </form>
     </div>

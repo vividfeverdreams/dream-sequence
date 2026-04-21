@@ -83,6 +83,8 @@ You can override those values with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`.
 - `OPENAI_TEXT_MODEL`
 - `OPENAI_VIDEO_MODEL`
 
+The app reads OpenAI credentials from environment variables only. The dashboard does not store or edit API keys.
+
 ### Required for Twilio SMS intake
 
 - `TWILIO_ACCOUNT_SID`

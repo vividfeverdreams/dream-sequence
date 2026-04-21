@@ -43,16 +43,16 @@ export async function getSessionSnapshot(sessionId: string) {
     return null;
   }
 
-  const approvedSubmissions = session.submissions.filter((submission) => submission.status === "approved");
-  const queuedRender = session.renderJobs.find((job) => job.status === "queued" || job.status === "in_progress");
+  const approvedSubmissions = session.submissions.filter((submission: any) => submission.status === "approved");
+  const queuedRender = session.renderJobs.find((job: any) => job.status === "queued" || job.status === "in_progress");
 
   return {
     session,
     queueHealth: {
       approvedCount: approvedSubmissions.length,
-      queuedRenderCount: session.renderJobs.filter((job) => job.status === "queued").length,
-      renderingCount: session.renderJobs.filter((job) => job.status === "in_progress").length,
-      readyAssetCount: session.renderJobs.filter((job) => job.status === "completed").length,
+      queuedRenderCount: session.renderJobs.filter((job: any) => job.status === "queued").length,
+      renderingCount: session.renderJobs.filter((job: any) => job.status === "in_progress").length,
+      readyAssetCount: session.renderJobs.filter((job: any) => job.status === "completed").length,
       waitingOnRender: Boolean(queuedRender)
     }
   };

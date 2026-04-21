@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { env, hasOpenAiCredentials } from "@/lib/env";
+import { env } from "@/lib/env";
 import { getOpenAiClient } from "@/lib/openai-client";
+import { getEffectiveOpenAiApiKeyForUser } from "@/lib/openai-key-store";
 import { clamp, normalizePromptText, splitList } from "@/lib/utils";
 
 const assessmentSchema = z.object({
@@ -16,6 +17,7 @@ const assessmentSchema = z.object({
 });
 
 type SessionContext = {
+  userId?: string;
   artistName: string;
   trackName: string;
   creativeBible: string;
@@ -49,12 +51,16 @@ const hardBlockedTerms = [
 ];
 
 export async function assessSubmission(input: AssessmentInput): Promise<SubmissionAssessment> {
-  if (!hasOpenAiCredentials()) {
+  const apiKey = input.session.userId
+    ? await getEffectiveOpenAiApiKeyForUser(input.session.userId)
+    : env.openAiApiKey || null;
+
+  if (!apiKey) {
     return heuristicAssessment(input);
   }
 
   try {
-    const client = getOpenAiClient();
+    const client = getOpenAiClient(apiKey);
 
     if (!client) {
       return heuristicAssessment(input);

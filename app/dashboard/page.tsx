@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getPrimarySessionForUser } from "@/lib/session-service";
 import { getSessionSnapshot } from "@/lib/snapshot";
+import { getOpenAiConnectionStatusForUser } from "@/lib/openai-key-store";
 import { SessionSetupForm } from "@/components/session-setup-form";
 import { DashboardShell } from "@/components/dashboard-shell";
 
@@ -41,5 +42,13 @@ export default async function DashboardPage() {
     return null;
   }
 
-  return <DashboardShell initialSnapshot={snapshot} currentUserName={user.displayName} />;
+  const openAiStatus = await getOpenAiConnectionStatusForUser(user.id);
+
+  return (
+    <DashboardShell
+      initialSnapshot={snapshot}
+      currentUserName={user.displayName}
+      initialOpenAiStatus={openAiStatus}
+    />
+  );
 }

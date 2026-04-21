@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getOpenAiConnectionStatusForSession } from "@/lib/openai-key-store";
 import { getSessionSnapshot } from "@/lib/snapshot";
 import { ShowScreen } from "@/components/show-screen";
 
@@ -18,5 +19,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
     notFound();
   }
 
-  return <ShowScreen initialSnapshot={snapshot} />;
+  const openAiStatus = await getOpenAiConnectionStatusForSession(sessionId);
+
+  return <ShowScreen initialSnapshot={snapshot} openAiConfigured={openAiStatus.configured} />;
 }

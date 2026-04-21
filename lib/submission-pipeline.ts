@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { assessSubmission } from "@/lib/ai-assessment";
 import { checkSubmissionRateLimit } from "@/lib/rate-limit";
 import { recordAuditEvent } from "@/lib/audit";
+import { getEffectiveOpenAiApiKeyForUser } from "@/lib/openai-key-store";
 import { hashValue, normalizePromptText } from "@/lib/utils";
 import { reconcileRenderJob, startVideoRender } from "@/lib/rendering";
 
@@ -88,11 +89,11 @@ export async function ingestSubmission(input: IntakeInput) {
     submissionText: submission.normalizedText,
     session,
     recentWinningPrompts: session.submissions
-      .map((item) => item.rankingResult?.winningPrompt)
-      .filter((value): value is string => Boolean(value))
+      .map((item: any) => item.rankingResult?.winningPrompt)
+      .filter((value: any): value is string => Boolean(value))
   });
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: any) => {
     await tx.moderationResult.create({
       data: {
         submissionId: submission.id,
@@ -246,7 +247,11 @@ export async function queueAutomatedRender(
   }
 
   const sourceAsset = session.visualAssets[0] ?? null;
-  const mode = sourceAsset ? requestedMode : "seed";
+  const canEditExistingVideo =
+    requestedMode === "remix" &&
+    Boolean(sourceAsset?.sourceVideoId) &&
+    String(sourceAsset?.sourceVideoId).startsWith("video_");
+  const mode = canEditExistingVideo ? "remix" : "seed";
 
   const outputAsset = await db.visualAsset.create({
     data: {
@@ -271,12 +276,66 @@ export async function queueAutomatedRender(
     }
   });
 
-  const started = await startVideoRender({
-    mode,
-    prompt: promptText,
-    sourceVideoId: sourceAsset?.sourceVideoId,
-    imageReferenceUrl: session.imageReferenceUrl
-  });
+  const openAiApiKey = session.userId
+    ? await getEffectiveOpenAiApiKeyForUser(String(session.userId))
+    : null;
+
+  let started;
+
+  try {
+    started = await startVideoRender({
+      mode,
+      prompt: promptText,
+      sourceVideoId: sourceAsset?.sourceVideoId,
+      imageReferenceUrl: session.imageReferenceUrl,
+      openAiApiKey
+    });
+  } catch (error) {
+    const failureReason =
+      error instanceof Error ? error.message : "Render could not be started.";
+
+    await db.$transaction(async (tx: any) => {
+      await tx.renderJob.update({
+        where: {
+          id: renderJob.id
+        },
+        data: {
+          status: "failed",
+          failureReason
+        }
+      });
+
+      await tx.visualAsset.update({
+        where: {
+          id: outputAsset.id
+        },
+        data: {
+          status: "failed"
+        }
+      });
+
+      if (submissionId) {
+        await tx.promptSubmission.update({
+          where: {
+            id: submissionId
+          },
+          data: {
+            status: "approved",
+            selectedAt: null
+          }
+        });
+      }
+    });
+
+    await recordAuditEvent({
+      type: "render.start_failed",
+      summary: "Could not start a remix render",
+      details: failureReason,
+      sessionId
+    });
+
+    return null;
+  }
 
   if (started.kind === "demo") {
     await db.renderJob.update({
