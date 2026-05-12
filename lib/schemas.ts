@@ -35,5 +35,6 @@ export const inboundSmsSchema = z.object({
 
 export const controlSchema = z.object({
   action: z.enum(["pause-selection", "resume-selection", "skip-next", "fallback-remix", "stop-session"]),
-  value: z.boolean().optional()
+  value: z.boolean().optional(),
+  transitionSeconds: z.number().min(0).max(8).optional()
 });

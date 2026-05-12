@@ -18,11 +18,21 @@ body {
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(16, 214, 160, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(75, 141, 255, 0.12), transparent 28%),
-    linear-gradient(180deg, #081019 0%, #060b14 46%, #030507 100%);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(180deg, #202225 0%, #17191c 46%, #111315 100%);
+  background-size: 34px 34px, 34px 34px, auto;
   color: white;
   font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+html[data-show-output="clean"] body {
+  background: #000;
+}
+
+html[data-show-output="clean"] nextjs-portal,
+html[data-show-output="clean"] button[aria-label="Open Next.js Dev Tools"] {
+  display: none !important;
 }
 
 a {
@@ -37,17 +47,29 @@ select {
   font: inherit;
 }
 
+.audio-reactive-select {
+  color-scheme: dark;
+  -webkit-text-fill-color: #ffffff;
+}
+
+.audio-reactive-select option,
+.audio-reactive-select optgroup {
+  background-color: #202225;
+  color: #ffffff;
+}
+
 ::selection {
-  background: rgba(16, 214, 160, 0.3);
+  background: rgba(186, 255, 57, 0.32);
 }
 
 .panel {
-  @apply rounded-4xl border border-white/10 bg-white/[0.05] shadow-glow backdrop-blur;
+  @apply rounded-lg border border-[#34383c] bg-[#181a1d] shadow-[0_20px_60px_rgba(0,0,0,0.28)];
 }
 
 .subtle-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 28px 28px;
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-color: #181a1d;
+  background-size: 32px 32px;
 }

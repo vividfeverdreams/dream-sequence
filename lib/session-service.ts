@@ -173,7 +173,7 @@ export async function setSelectionPause(sessionId: string, userId: string, pause
   return session;
 }
 
-export async function forceTransitionToNext(sessionId: string, userId: string) {
+export async function forceTransitionToNext(sessionId: string, userId: string, transitionSeconds = 0) {
   const session = await db.dJSession.findFirst({
     where: {
       id: sessionId,
@@ -188,7 +188,24 @@ export async function forceTransitionToNext(sessionId: string, userId: string) {
     return null;
   }
 
-  return completePlaybackTransition(sessionId);
+  await db.playbackState.update({
+    where: {
+      id: session.playbackState.id
+    },
+    data: {
+      status: "transitioning",
+      crossfadeSeconds: Math.max(0, Math.min(8, transitionSeconds))
+    }
+  });
+
+  await recordAuditEvent({
+    type: "playback.transition_requested",
+    summary: transitionSeconds > 0 ? "Requested a fade to the queued visual asset" : "Requested a hard cut to the queued visual asset",
+    sessionId,
+    userId
+  });
+
+  return true;
 }
 
 export async function completePlaybackTransition(sessionId: string) {
@@ -238,7 +255,7 @@ export async function completePlaybackTransition(sessionId: string) {
 
   await recordAuditEvent({
     type: "playback.transitioned",
-    summary: "Crossfaded to the queued visual asset",
+    summary: "Switched to the queued visual asset",
     sessionId
   });
 
