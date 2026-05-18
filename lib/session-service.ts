@@ -1,12 +1,13 @@
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
-import { createSessionCode, normalizePromptText } from "@/lib/utils";
+import { createSessionCode, normalizePromptText, slugifyCode } from "@/lib/utils";
 import { queueAutomatedRender } from "@/lib/submission-pipeline";
 
 type SessionInput = {
   name: string;
   artistName: string;
   trackName: string;
+  audienceSlug?: string;
   creativeBible: string;
   allowedMotifs: string;
   bannedTerms: string;
@@ -25,7 +26,9 @@ type SessionInput = {
 };
 
 export async function createDjSession(userId: string, input: SessionInput) {
-  const code = createSessionCode(`${input.artistName}-${input.trackName}`);
+  const code = input.audienceSlug
+    ? slugifyCode(input.audienceSlug, 48)
+    : createSessionCode(`${input.artistName}-${input.trackName}`);
 
   const session = await db.dJSession.create({
     data: {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { createDjSession } from "@/lib/session-service";
 import { sessionFormSchema } from "@/lib/schemas";
 
@@ -29,6 +30,25 @@ export async function POST(request: Request) {
         status: 400
       }
     );
+  }
+
+  if (parsed.data.audienceSlug) {
+    const existingSession = await db.dJSession.findUnique({
+      where: {
+        code: parsed.data.audienceSlug
+      }
+    });
+
+    if (existingSession) {
+      return NextResponse.json(
+        {
+          error: "That audience URL is already taken."
+        },
+        {
+          status: 409
+        }
+      );
+    }
   }
 
   const session = await createDjSession(user.id, {

@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "next": "^15.0.0",
     "openai": "^5.0.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "twilio": "^5.5.0",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@next/swc-wasm-nodejs": "15.5.15",
     "@types/node": "^22.10.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",

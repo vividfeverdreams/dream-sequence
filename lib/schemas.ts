@@ -45,6 +45,13 @@ export const sessionFormSchema = z.object({
   name: z.string().min(3).max(100),
   artistName: z.string().min(2).max(100),
   trackName: z.string().min(2).max(100),
+  audienceSlug: z
+    .string()
+    .trim()
+    .min(3)
+    .max(48)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .optional(),
   creativeBible: z.string().min(20).max(600),
   allowedMotifs: optionalSessionText(400),
   bannedTerms: z.string().min(3).max(400),
