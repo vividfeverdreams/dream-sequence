@@ -9,44 +9,52 @@ datasource db {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  passwordHash String
-  displayName  String
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  sessions     DJSession[]
-  auditEvents  AuditEvent[]
+  id                    String       @id @default(cuid())
+  email                 String       @unique
+  passwordHash          String
+  displayName           String
+  avatarUrl             String?
+  openAiApiKeyEncrypted String?
+  openAiApiKeyLast4     String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  sessions              DJSession[]
+  auditEvents           AuditEvent[]
 }
 
 model DJSession {
-  id                String             @id @default(cuid())
-  code              String             @unique
-  userId            String
-  name              String
-  artistName        String
-  trackName         String
-  creativeBible     String
-  allowedMotifs     String
-  bannedTerms       String
-  colorPalette      String
-  motionRules       String
-  basePrompt        String
-  imageReferenceUrl String?
-  smsNumber         String?
-  status            String             @default("draft")
-  venueSafeMode     Boolean            @default(true)
-  autoSelectEnabled Boolean            @default(true)
-  startedAt         DateTime?
-  stoppedAt         DateTime?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  submissions       PromptSubmission[]
-  visualAssets      VisualAsset[]
-  renderJobs        RenderJob[]
-  playbackState     PlaybackState?
-  auditEvents       AuditEvent[]
+  id                   String             @id @default(cuid())
+  code                 String             @unique
+  userId               String
+  name                 String
+  artistName           String
+  trackName            String
+  creativeBible        String
+  allowedMotifs        String
+  bannedTerms          String
+  colorPalette         String
+  motionRules          String
+  basePrompt           String
+  systemPrompt         String?
+  automoderationPrompt String?
+  audiencePromptGuide  String?
+  remixPromptTemplate  String?
+  negativePrompt       String?
+  imageReferenceUrl    String?
+  smsNumber            String?
+  status               String             @default("draft")
+  venueSafeMode        Boolean            @default(true)
+  autoSelectEnabled    Boolean            @default(true)
+  startedAt            DateTime?
+  stoppedAt            DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions          PromptSubmission[]
+  visualAssets         VisualAsset[]
+  renderJobs           RenderJob[]
+  playbackState        PlaybackState?
+  auditEvents          AuditEvent[]
 
   @@index([userId, createdAt])
 }

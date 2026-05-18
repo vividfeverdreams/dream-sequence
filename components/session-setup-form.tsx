@@ -1,9 +1,44 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, ReactNode, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  defaultAudiencePromptGuide,
+  defaultAutomoderationPrompt,
+  defaultNegativePrompt,
+  defaultRemixPromptTemplate,
+  defaultSystemPrompt
+} from "@/lib/session-defaults";
 
 const initialForm = {
+  name: "",
+  artistName: "",
+  trackName: "",
+  creativeBible: "",
+  allowedMotifs: "",
+  allowedMotifsEnabled: true,
+  bannedTerms: "",
+  colorPalette: "",
+  colorPaletteEnabled: true,
+  motionRules: "",
+  basePrompt: "",
+  systemPrompt: "",
+  systemPromptUseDefault: true,
+  automoderationPrompt: "",
+  automoderationPromptUseDefault: true,
+  audiencePromptGuide: "",
+  audiencePromptGuideUseDefault: true,
+  remixPromptTemplate: "",
+  remixPromptTemplateUseDefault: true,
+  negativePrompt: "",
+  negativePromptUseDefault: true,
+  imageReferenceUrl: "",
+  smsNumber: "",
+  venueSafeMode: true,
+  autoSelectEnabled: true
+};
+
+const examples = {
   name: "Neon Echo Launch Set",
   artistName: "Neon Echo",
   trackName: "Skyline Pressure",
@@ -15,186 +50,551 @@ const initialForm = {
   motionRules: "slow camera drift, pulse on phrase changes, never become chaotic or shaky",
   basePrompt:
     "A looping wide cinematic abstract concert visual with mirrored architecture, chrome fog, pulse halos, and elegant nightclub motion.",
-  imageReferenceUrl: "",
-  smsNumber: "",
-  venueSafeMode: true,
-  autoSelectEnabled: true
+  smsNumber: "+15555555555",
+  imageReferenceUrl: "https://...",
+  systemPrompt: defaultSystemPrompt,
+  automoderationPrompt: defaultAutomoderationPrompt,
+  audiencePromptGuide: defaultAudiencePromptGuide,
+  remixPromptTemplate: defaultRemixPromptTemplate,
+  negativePrompt: defaultNegativePrompt
 };
+
+type SessionSetupFormState = typeof initialForm;
+type TextFieldName = {
+  [Key in keyof SessionSetupFormState]: SessionSetupFormState[Key] extends string ? Key : never;
+}[keyof SessionSetupFormState];
 
 export function SessionSetupForm() {
   const router = useRouter();
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState<string | null>(null);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [enhancingField, setEnhancingField] = useState<"creativeBible" | "basePrompt" | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  function updateTextField(field: TextFieldName, value: string) {
+    setForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setIsSubmitting(true);
 
-    const response = await fetch("/api/sessions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(form)
-    });
+    try {
+      const payload = {
+        ...form,
+        allowedMotifs: form.allowedMotifsEnabled ? form.allowedMotifs : "",
+        colorPalette: form.colorPaletteEnabled ? form.colorPalette : "",
+        systemPrompt: form.systemPromptUseDefault ? undefined : form.systemPrompt.trim() || undefined,
+        automoderationPrompt: form.automoderationPromptUseDefault
+          ? undefined
+          : form.automoderationPrompt.trim() || undefined,
+        audiencePromptGuide: form.audiencePromptGuideUseDefault
+          ? undefined
+          : form.audiencePromptGuide.trim() || undefined,
+        remixPromptTemplate: form.remixPromptTemplateUseDefault
+          ? undefined
+          : form.remixPromptTemplate.trim() || undefined,
+        negativePrompt: form.negativePromptUseDefault ? undefined : form.negativePrompt.trim() || undefined
+      };
 
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(payload?.error ?? "Could not create the session.");
-      return;
+      const response = await fetch("/api/sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(payload?.error ?? "Could not create the session.");
+        return;
+      }
+
+      startTransition(() => {
+        router.push("/dashboard");
+        router.refresh();
+      });
+    } catch {
+      setError("Could not create the session.");
+    } finally {
+      setIsSubmitting(false);
     }
+  }
 
-    startTransition(() => {
-      router.push("/dashboard");
-      router.refresh();
-    });
+  async function enhanceField(target: "creativeBible" | "basePrompt") {
+    setEnhanceError(null);
+    setEnhancingField(target);
+
+    try {
+      const response = await fetch("/api/session-enhance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          target,
+          creativeBible: form.creativeBible,
+          allowedMotifs: form.allowedMotifs,
+          allowedMotifsEnabled: form.allowedMotifsEnabled,
+          bannedTerms: form.bannedTerms,
+          colorPalette: form.colorPalette,
+          colorPaletteEnabled: form.colorPaletteEnabled,
+          motionRules: form.motionRules,
+          basePrompt: form.basePrompt
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        enhancedText?: string;
+      } | null;
+
+      if (!response.ok || !payload?.enhancedText) {
+        throw new Error(payload?.error ?? "Could not enhance that field.");
+      }
+
+      updateTextField(target, payload.enhancedText);
+    } catch (error) {
+      setEnhanceError(error instanceof Error ? error.message : "Could not enhance that field.");
+    } finally {
+      setEnhancingField(null);
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="panel p-6 sm:p-8">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Session Name</span>
-          <input
+    <form onSubmit={handleSubmit} className="panel overflow-hidden">
+      <FormSection
+        eyebrow="Session"
+        title="Show Basics"
+        body="Name the room, pick the track focus, and connect the intake channel for this run."
+      >
+        <div className="grid gap-5 lg:grid-cols-2">
+          <TextInput
+            label="Session Name"
             value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("name", value)}
+            placeholder={examples.name}
           />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Artist</span>
-          <input
+          <TextInput
+            label="Artist"
             value={form.artistName}
-            onChange={(event) => setForm((current) => ({ ...current, artistName: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("artistName", value)}
+            placeholder={examples.artistName}
           />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Track</span>
-          <input
+          <TextInput
+            label="Track"
             value={form.trackName}
-            onChange={(event) => setForm((current) => ({ ...current, trackName: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("trackName", value)}
+            placeholder={examples.trackName}
           />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Twilio Number (optional)</span>
-          <input
+          <TextInput
+            label="Twilio Number"
             value={form.smsNumber}
-            onChange={(event) => setForm((current) => ({ ...current, smsNumber: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
-            placeholder="+15555555555"
+            onChange={(value) => updateTextField("smsNumber", value)}
+            placeholder={examples.smsNumber}
           />
-        </label>
+        </div>
+      </FormSection>
 
-        <label className="block lg:col-span-2">
-          <span className="mb-2 block text-sm font-medium text-white/80">Creative Bible</span>
-          <textarea
+      <FormSection
+        eyebrow="Visual DNA"
+        title="Creative Boundaries"
+        body="These fields become the source of truth for seed renders, crowd remixes, scoring, and the audience-facing prompt page."
+      >
+        <div className="grid gap-5 lg:grid-cols-2">
+          <TextArea
+            className="lg:col-span-2"
+            label="Creative Bible"
             rows={4}
             value={form.creativeBible}
-            onChange={(event) => setForm((current) => ({ ...current, creativeBible: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("creativeBible", value)}
+            placeholder={examples.creativeBible}
+            action={
+              <EnhanceButton
+                active={enhancingField === "creativeBible"}
+                onClick={() => void enhanceField("creativeBible")}
+              />
+            }
           />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Allowed Motifs</span>
-          <textarea
-            rows={4}
-            value={form.allowedMotifs}
-            onChange={(event) => setForm((current) => ({ ...current, allowedMotifs: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Banned Terms</span>
-          <textarea
+          <ToggleField
+            label="Allowed Motifs"
+            enabled={form.allowedMotifsEnabled}
+            onToggle={(enabled) => setForm((current) => ({ ...current, allowedMotifsEnabled: enabled }))}
+          >
+            <TextArea
+              label="Allowed Motifs"
+              labelClassName="sr-only"
+              rows={4}
+              value={form.allowedMotifs}
+              onChange={(value) => updateTextField("allowedMotifs", value)}
+              placeholder={examples.allowedMotifs}
+              disabled={!form.allowedMotifsEnabled}
+            />
+          </ToggleField>
+          <TextArea
+            label="Banned Terms"
             rows={4}
             value={form.bannedTerms}
-            onChange={(event) => setForm((current) => ({ ...current, bannedTerms: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("bannedTerms", value)}
+            placeholder={examples.bannedTerms}
           />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Color Palette</span>
-          <input
-            value={form.colorPalette}
-            onChange={(event) => setForm((current) => ({ ...current, colorPalette: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-white/80">Motion Rules</span>
-          <input
+          <ToggleField
+            label="Color Palette"
+            enabled={form.colorPaletteEnabled}
+            onToggle={(enabled) => setForm((current) => ({ ...current, colorPaletteEnabled: enabled }))}
+          >
+            <TextInput
+              label="Color Palette"
+              labelClassName="sr-only"
+              value={form.colorPalette}
+              onChange={(value) => updateTextField("colorPalette", value)}
+              placeholder={examples.colorPalette}
+              disabled={!form.colorPaletteEnabled}
+            />
+          </ToggleField>
+          <TextInput
+            label="Motion Rules"
             value={form.motionRules}
-            onChange={(event) => setForm((current) => ({ ...current, motionRules: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("motionRules", value)}
+            placeholder={examples.motionRules}
           />
-        </label>
-
-        <label className="block lg:col-span-2">
-          <span className="mb-2 block text-sm font-medium text-white/80">Base Prompt</span>
-          <textarea
+          <TextArea
+            className="lg:col-span-2"
+            label="Base Prompt"
             rows={5}
             value={form.basePrompt}
-            onChange={(event) => setForm((current) => ({ ...current, basePrompt: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
+            onChange={(value) => updateTextField("basePrompt", value)}
+            placeholder={examples.basePrompt}
+            action={
+              <EnhanceButton
+                active={enhancingField === "basePrompt"}
+                onClick={() => void enhanceField("basePrompt")}
+              />
+            }
           />
-        </label>
-
-        <label className="block lg:col-span-2">
-          <span className="mb-2 block text-sm font-medium text-white/80">Image Reference URL (optional)</span>
-          <input
+          <TextInput
+            className="lg:col-span-2"
+            label="Image Reference URL"
             value={form.imageReferenceUrl}
-            onChange={(event) => setForm((current) => ({ ...current, imageReferenceUrl: event.target.value }))}
-            className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition focus:border-plasma"
-            placeholder="https://..."
+            onChange={(value) => updateTextField("imageReferenceUrl", value)}
+            placeholder={examples.imageReferenceUrl}
           />
-        </label>
-      </div>
+        </div>
+        {enhanceError ? (
+          <p className="mt-5 rounded-md border border-ember/20 bg-ember/10 px-4 py-3 text-sm text-ember">
+            {enhanceError}
+          </p>
+        ) : null}
+      </FormSection>
 
-      <div className="mt-6 flex flex-wrap gap-4 text-sm text-white/75">
-        <label className="inline-flex items-center gap-3 rounded-full border border-white/10 px-4 py-3">
-          <input
-            type="checkbox"
-            checked={form.venueSafeMode}
-            onChange={(event) => setForm((current) => ({ ...current, venueSafeMode: event.target.checked }))}
-          />
-          Venue-safe mode
-        </label>
+      <FormSection
+        eyebrow="AI Rules"
+        title="System And Automoderation Prompts"
+        body="Tune how the AI behaves, how the venue-safe gate makes decisions, and how winning crowd ideas are rewritten into render prompts."
+      >
+        <div className="grid gap-5">
+          <ToggleField
+            label="System Prompt"
+            toggleLabel="Use default"
+            enabled={form.systemPromptUseDefault}
+            onToggle={(enabled) =>
+              setForm((current) => ({
+                ...current,
+                systemPromptUseDefault: enabled,
+                ...(enabled ? { systemPrompt: "" } : {})
+              }))
+            }
+          >
+            <TextArea
+              label="System Prompt"
+              labelClassName="sr-only"
+              rows={5}
+              value={form.systemPrompt}
+              onChange={(value) => updateTextField("systemPrompt", value)}
+              placeholder={examples.systemPrompt}
+              disabled={form.systemPromptUseDefault}
+            />
+          </ToggleField>
+          <ToggleField
+            label="Automoderation Prompt"
+            toggleLabel="Use default"
+            enabled={form.automoderationPromptUseDefault}
+            onToggle={(enabled) =>
+              setForm((current) => ({
+                ...current,
+                automoderationPromptUseDefault: enabled,
+                ...(enabled ? { automoderationPrompt: "" } : {})
+              }))
+            }
+          >
+            <TextArea
+              label="Automoderation Prompt"
+              labelClassName="sr-only"
+              rows={6}
+              value={form.automoderationPrompt}
+              onChange={(value) => updateTextField("automoderationPrompt", value)}
+              placeholder={examples.automoderationPrompt}
+              disabled={form.automoderationPromptUseDefault}
+            />
+          </ToggleField>
+          <ToggleField
+            label="Remix Prompt Template"
+            toggleLabel="Use default"
+            enabled={form.remixPromptTemplateUseDefault}
+            onToggle={(enabled) =>
+              setForm((current) => ({
+                ...current,
+                remixPromptTemplateUseDefault: enabled,
+                ...(enabled ? { remixPromptTemplate: "" } : {})
+              }))
+            }
+          >
+            <TextArea
+              label="Remix Prompt Template"
+              labelClassName="sr-only"
+              rows={6}
+              value={form.remixPromptTemplate}
+              onChange={(value) => updateTextField("remixPromptTemplate", value)}
+              placeholder={examples.remixPromptTemplate}
+              disabled={form.remixPromptTemplateUseDefault}
+            />
+          </ToggleField>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <ToggleField
+              label="Negative Prompt"
+              toggleLabel="Use default"
+              enabled={form.negativePromptUseDefault}
+              onToggle={(enabled) =>
+                setForm((current) => ({
+                  ...current,
+                  negativePromptUseDefault: enabled,
+                  ...(enabled ? { negativePrompt: "" } : {})
+                }))
+              }
+            >
+              <TextArea
+                label="Negative Prompt"
+                labelClassName="sr-only"
+                rows={5}
+                value={form.negativePrompt}
+                onChange={(value) => updateTextField("negativePrompt", value)}
+                placeholder={examples.negativePrompt}
+                disabled={form.negativePromptUseDefault}
+              />
+            </ToggleField>
+            <ToggleField
+              label="Audience Prompt Guide"
+              toggleLabel="Use default"
+              enabled={form.audiencePromptGuideUseDefault}
+              onToggle={(enabled) =>
+                setForm((current) => ({
+                  ...current,
+                  audiencePromptGuideUseDefault: enabled,
+                  ...(enabled ? { audiencePromptGuide: "" } : {})
+                }))
+              }
+            >
+              <TextArea
+                label="Audience Prompt Guide"
+                labelClassName="sr-only"
+                rows={5}
+                value={form.audiencePromptGuide}
+                onChange={(value) => updateTextField("audiencePromptGuide", value)}
+                placeholder={examples.audiencePromptGuide}
+                disabled={form.audiencePromptGuideUseDefault}
+              />
+            </ToggleField>
+          </div>
+        </div>
+      </FormSection>
 
-        <label className="inline-flex items-center gap-3 rounded-full border border-white/10 px-4 py-3">
-          <input
-            type="checkbox"
-            checked={form.autoSelectEnabled}
-            onChange={(event) => setForm((current) => ({ ...current, autoSelectEnabled: event.target.checked }))}
-          />
-          Auto-select winning prompts
-        </label>
-      </div>
+      <div className="border-t border-[#34383c] px-6 py-6 sm:px-8">
+        <div className="flex flex-wrap gap-4 text-sm text-white/75">
+          <label className="inline-flex items-center gap-3 rounded-md border border-[#42464a] bg-[#111315] px-4 py-3">
+            <input
+              type="checkbox"
+              checked={form.venueSafeMode}
+              onChange={(event) => setForm((current) => ({ ...current, venueSafeMode: event.target.checked }))}
+            />
+            Venue-safe mode
+          </label>
 
-      {error ? <p className="mt-5 rounded-3xl border border-ember/20 bg-ember/10 px-4 py-3 text-sm text-ember">{error}</p> : null}
+          <label className="inline-flex items-center gap-3 rounded-md border border-[#42464a] bg-[#111315] px-4 py-3">
+            <input
+              type="checkbox"
+              checked={form.autoSelectEnabled}
+              onChange={(event) => setForm((current) => ({ ...current, autoSelectEnabled: event.target.checked }))}
+            />
+            Auto-select winning prompts
+          </label>
+        </div>
 
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
-        <p className="max-w-2xl text-sm leading-7 text-white/65">
-          The first live render seeds the show from your base prompt. After that, approved crowd prompts are rewritten into focused Sora remixes.
-        </p>
+        {error ? <p className="mt-5 rounded-md border border-ember/20 bg-ember/10 px-4 py-3 text-sm text-ember">{error}</p> : null}
 
-        <button
-          type="submit"
-          disabled={isPending}
-          className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isPending ? "Creating..." : "Create Session"}
-        </button>
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
+          <p className="max-w-2xl text-sm leading-7 text-white/65">
+            Creating a new session keeps earlier sessions intact. Continue Session will always open the most recent session for this account.
+          </p>
+
+          <button
+            type="submit"
+            disabled={isSubmitting || isPending}
+            className="rounded-md bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting || isPending ? "Creating..." : "Create New Session"}
+          </button>
+        </div>
       </div>
     </form>
+  );
+}
+
+function FormSection({
+  eyebrow,
+  title,
+  body,
+  children
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border-b border-[#34383c] px-6 py-7 last:border-b-0 sm:px-8">
+      <div className="mb-6 max-w-3xl">
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#8f9499]">{eyebrow}</p>
+        <h2 className="mt-3 text-2xl font-semibold text-white">{title}</h2>
+        <p className="mt-3 text-sm leading-7 text-[#aaa79f]">{body}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+  labelClassName = "",
+  className = ""
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  labelClassName?: string;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className}`}>
+      <span className={`mb-2 block text-sm font-medium text-white/80 ${labelClassName}`}>{label}</span>
+      <input
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-md border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-white/30 focus:border-plasma disabled:cursor-not-allowed disabled:opacity-45"
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  rows,
+  placeholder,
+  action,
+  disabled = false,
+  labelClassName = "",
+  className = ""
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  rows: number;
+  placeholder?: string;
+  action?: ReactNode;
+  disabled?: boolean;
+  labelClassName?: string;
+  className?: string;
+}) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="mb-2 flex items-center justify-between gap-3">
+        <span className={`block text-sm font-medium text-white/80 ${labelClassName}`}>{label}</span>
+        {action}
+      </span>
+      <textarea
+        rows={rows}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full resize-y rounded-md border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-white/30 focus:border-plasma disabled:cursor-not-allowed disabled:opacity-45"
+      />
+    </label>
+  );
+}
+
+function ToggleField({
+  label,
+  toggleLabel,
+  enabled,
+  onToggle,
+  children
+}: {
+  label: string;
+  toggleLabel?: string;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-white/10 bg-black/20 p-4">
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <span className="text-sm font-semibold uppercase tracking-[0.16em] text-white/80">{label}</span>
+        <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/65">
+          {toggleLabel ?? (enabled ? "On" : "Off")}
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => onToggle(event.target.checked)}
+            className="h-4 w-4"
+          />
+        </label>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EnhanceButton({
+  active,
+  onClick
+}: {
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={active}
+      className="shrink-0 rounded-md border border-plasma/30 bg-plasma/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-plasma transition hover:border-plasma disabled:cursor-not-allowed disabled:opacity-55"
+    >
+      {active ? "Enhancing..." : "AI Enhance"}
+    </button>
   );
 }

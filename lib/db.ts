@@ -1,7 +1,16 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
+import { hashPassword } from "@/lib/auth-core";
 import { env } from "@/lib/env";
+import {
+  defaultAudiencePromptGuide,
+  defaultAutomoderationPrompt,
+  defaultNegativePrompt,
+  defaultRemixPromptTemplate,
+  defaultSystemPrompt
+} from "@/lib/session-defaults";
 
 type WhereValue =
   | string
@@ -30,8 +39,16 @@ const sqlite =
   new DatabaseSync(resolveDatabasePath(env.databaseUrl));
 
 sqlite.exec("PRAGMA foreign_keys = ON");
-ensureColumn("User", "openAiApiKeyEncrypted", 'TEXT');
-ensureColumn("User", "openAiApiKeyLast4", 'TEXT');
+ensureSchema();
+ensureColumn("User", "avatarUrl", "TEXT");
+ensureColumn("User", "openAiApiKeyEncrypted", "TEXT");
+ensureColumn("User", "openAiApiKeyLast4", "TEXT");
+ensureColumn("DJSession", "systemPrompt", "TEXT");
+ensureColumn("DJSession", "automoderationPrompt", "TEXT");
+ensureColumn("DJSession", "audiencePromptGuide", "TEXT");
+ensureColumn("DJSession", "remixPromptTemplate", "TEXT");
+ensureColumn("DJSession", "negativePrompt", "TEXT");
+ensureDemoData();
 
 if (process.env.NODE_ENV !== "production") {
   global.crowdRemixSqlite = sqlite;
@@ -51,6 +68,30 @@ function resolveDatabasePath(databaseUrl: string) {
   return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
 }
 
+function ensureSchema() {
+  const userTable = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get("User");
+
+  if (userTable) {
+    return;
+  }
+
+  const migrationPath = path.join(
+    process.cwd(),
+    "prisma",
+    "migrations",
+    "20260417162000_init",
+    "migration.sql"
+  );
+
+  if (!fs.existsSync(migrationPath)) {
+    throw new Error(`Missing SQLite schema migration: ${migrationPath}`);
+  }
+
+  sqlite.exec(fs.readFileSync(migrationPath, "utf8"));
+}
+
 function ensureColumn(table: string, column: string, typeDefinition: string) {
   const columns = sqlite.prepare(`PRAGMA table_info("${table}")`).all() as Array<{
     name: string;
@@ -61,6 +102,141 @@ function ensureColumn(table: string, column: string, typeDefinition: string) {
   }
 
   sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${typeDefinition}`);
+}
+
+function ensureDemoData() {
+  const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
+  const password = process.env.SEED_DJ_PASSWORD ?? "crowdremix-demo";
+  const userId = "demo-dj-user";
+  const sessionId = "demo-neon-echo-session";
+  const playbackId = "demo-neon-echo-playback";
+  const existingUserById = getUser({
+    id: userId
+  });
+  const existingUserByEmail = getUser({
+    email
+  });
+
+  if (existingUserById) {
+    if (existingUserById.email !== email) {
+      updateRow("User", { id: userId }, { email }, { touchUpdatedAt: true });
+    }
+    ensureDemoSession(userId, sessionId, playbackId);
+    return;
+  }
+
+  if (existingUserByEmail) {
+    sqlite.exec("PRAGMA foreign_keys = OFF");
+    updateRow(
+      "User",
+      { email },
+      { id: userId, passwordHash: hashPassword(password), displayName: "Demo DJ" },
+      { touchUpdatedAt: true }
+    );
+    updateRow("DJSession", { userId: String(existingUserByEmail.id) }, { userId }, { touchUpdatedAt: true });
+    sqlite.exec("PRAGMA foreign_keys = ON");
+    ensureDemoSession(userId, sessionId, playbackId);
+    return;
+  }
+
+  insertRow("User", {
+    id: userId,
+    email,
+    passwordHash: hashPassword(password),
+    displayName: "Demo DJ"
+  });
+
+  ensureDemoSession(userId, sessionId, playbackId);
+}
+
+function ensureDemoSession(userId: string, sessionId: string, playbackId: string) {
+  const existingSession =
+    getOne<Record<string, unknown>>("DJSession", {
+      id: sessionId
+    }) ??
+    getOne<Record<string, unknown>>(
+      "DJSession",
+      {
+        userId
+      },
+      {
+        createdAt: "desc"
+      }
+    );
+
+  if (existingSession) {
+    if (existingSession.id === sessionId && existingSession.userId !== userId) {
+      updateRow("DJSession", { id: sessionId }, { userId }, { touchUpdatedAt: true });
+    }
+
+    backfillSessionCustomizationDefaults(existingSession);
+
+    ensureDemoPlayback(String(existingSession.id), existingSession.id === sessionId ? playbackId : randomUUID());
+    return;
+  }
+
+  insertRow("DJSession", {
+    id: sessionId,
+    userId,
+    code: "neon-echo-demo",
+    name: "Neon Echo Launch Set",
+    artistName: "Neon Echo",
+    trackName: "Skyline Pressure",
+    creativeBible:
+      "Kinetic abstract architecture, mirrored tunnel depth, humid atmosphere, elegant strobe restraint, no literal characters.",
+    allowedMotifs: "laser lattice, liquid chrome, skyline fragments, pulse halos",
+    bannedTerms: "violence, gore, nudity, celebrity, cartoon mascot",
+    colorPalette: "teal, ember, dusk blue, warm sand",
+    motionRules: "slow camera drift, pulse on phrase changes, never become chaotic or shaky",
+    basePrompt:
+      "A looping wide cinematic abstract concert visual with mirrored architecture, chrome fog, pulse halos, and elegant nightclub motion.",
+    systemPrompt: defaultSystemPrompt,
+    automoderationPrompt: defaultAutomoderationPrompt,
+    audiencePromptGuide: defaultAudiencePromptGuide,
+    remixPromptTemplate: defaultRemixPromptTemplate,
+    negativePrompt: defaultNegativePrompt,
+    status: "draft",
+    venueSafeMode: true,
+    autoSelectEnabled: true
+  });
+
+  ensureDemoPlayback(sessionId, playbackId);
+}
+
+function backfillSessionCustomizationDefaults(session: Record<string, unknown>) {
+  const missingDefaults = {
+    ...(session.systemPrompt ? {} : { systemPrompt: defaultSystemPrompt }),
+    ...(session.automoderationPrompt ? {} : { automoderationPrompt: defaultAutomoderationPrompt }),
+    ...(session.audiencePromptGuide ? {} : { audiencePromptGuide: defaultAudiencePromptGuide }),
+    ...(session.remixPromptTemplate ? {} : { remixPromptTemplate: defaultRemixPromptTemplate }),
+    ...(session.negativePrompt ? {} : { negativePrompt: defaultNegativePrompt })
+  };
+
+  if (Object.keys(missingDefaults).length > 0) {
+    updateRow("DJSession", { id: String(session.id) }, missingDefaults, { touchUpdatedAt: false });
+  }
+}
+
+function ensureDemoPlayback(sessionId: string, playbackId: string) {
+  const existingPlayback = getOne<Record<string, unknown>>("PlaybackState", {
+    sessionId
+  });
+
+  if (existingPlayback) {
+    return;
+  }
+
+  insertRow("PlaybackState", {
+    id: playbackId,
+    sessionId,
+    status: "idle",
+    emergencyPaused: false,
+    crossfadeSeconds: 2,
+    currentAssetId: null,
+    nextAssetId: null,
+    fallbackAssetId: null,
+    lastTransitionAt: null
+  });
 }
 
 function toSqlDate(value: Date | string | null | undefined) {
@@ -507,6 +683,11 @@ function createDbApi(): any {
           colorPalette: args.data.colorPalette,
           motionRules: args.data.motionRules,
           basePrompt: args.data.basePrompt,
+          systemPrompt: args.data.systemPrompt ?? null,
+          automoderationPrompt: args.data.automoderationPrompt ?? null,
+          audiencePromptGuide: args.data.audiencePromptGuide ?? null,
+          remixPromptTemplate: args.data.remixPromptTemplate ?? null,
+          negativePrompt: args.data.negativePrompt ?? null,
           imageReferenceUrl: args.data.imageReferenceUrl ?? null,
           smsNumber: args.data.smsNumber ?? null,
           status: args.data.status ?? "draft",

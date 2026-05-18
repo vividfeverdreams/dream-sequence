@@ -13,6 +13,11 @@ type SessionInput = {
   colorPalette: string;
   motionRules: string;
   basePrompt: string;
+  systemPrompt: string;
+  automoderationPrompt: string;
+  audiencePromptGuide: string;
+  remixPromptTemplate: string;
+  negativePrompt: string;
   imageReferenceUrl?: string;
   smsNumber?: string;
   venueSafeMode: boolean;
@@ -35,6 +40,11 @@ export async function createDjSession(userId: string, input: SessionInput) {
       colorPalette: input.colorPalette,
       motionRules: input.motionRules,
       basePrompt: normalizePromptText(input.basePrompt),
+      systemPrompt: normalizePromptText(input.systemPrompt),
+      automoderationPrompt: normalizePromptText(input.automoderationPrompt),
+      audiencePromptGuide: normalizePromptText(input.audiencePromptGuide),
+      remixPromptTemplate: normalizePromptText(input.remixPromptTemplate),
+      negativePrompt: normalizePromptText(input.negativePrompt),
       imageReferenceUrl: input.imageReferenceUrl || null,
       smsNumber: input.smsNumber || null,
       venueSafeMode: input.venueSafeMode,

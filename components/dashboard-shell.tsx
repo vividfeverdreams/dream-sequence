@@ -203,6 +203,12 @@ export function DashboardShell({
           <Link href={cleanShowLink} className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#00a7e1]">
             Fullscreen Show
           </Link>
+          <Link href="/sessions/new" className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
+            New Session
+          </Link>
+          <Link href="/profile" className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
+            Profile
+          </Link>
           <button
             onClick={() => void runControlAction("logout")}
             className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#ff764d]"
@@ -251,7 +257,7 @@ export function DashboardShell({
           {!openAiStatus.configured ? (
             <StatusNotice
               title="Demo Mode Active"
-              body="No OPENAI_API_KEY environment variable is active right now, so the app is using the demo loop fallback instead of real Sora generation."
+              body="No account or environment OpenAI API key is active right now, so the app is using the demo loop fallback instead of real Sora generation."
             />
           ) : null}
         </section>
@@ -412,15 +418,20 @@ export function DashboardShell({
           <AudioReactiveControlsPanel controller={audioReactive} />
 
           <div className="panel p-6">
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">OpenAI Environment</p>
+            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">OpenAI Connection</p>
             <p className="mt-4 text-sm leading-7 text-white/72">
-              {openAiStatus.source === "env"
-                ? `Using OPENAI_API_KEY from the local environment${openAiStatus.last4 ? ` ending in ${openAiStatus.last4}` : ""} for moderation and Sora calls.`
-                : "No OPENAI_API_KEY environment variable is configured yet, so the app is running in demo fallback mode."}
+              {openAiStatus.source === "account"
+                ? `Using the account OpenAI key${openAiStatus.last4 ? ` ending in ${openAiStatus.last4}` : ""} for moderation and Sora calls.`
+                : openAiStatus.source === "env"
+                  ? `Using OPENAI_API_KEY from the local environment${openAiStatus.last4 ? ` ending in ${openAiStatus.last4}` : ""} for moderation and Sora calls.`
+                  : "No OpenAI API key is connected yet, so the app is running in demo fallback mode."}
             </p>
             <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 px-4 py-4 text-sm leading-7 text-white/72">
-              Set `OPENAI_API_KEY` in `.env` or your shell before starting the app. The dashboard no longer stores or edits API keys.
+              Manage account keys from Profile. Environment keys still work as a fallback for local development.
             </div>
+            <Link href="/profile" className="mt-4 inline-flex rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
+              Open Profile
+            </Link>
           </div>
 
           <div className="panel p-6">
@@ -481,9 +492,23 @@ export function DashboardShell({
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">Session DNA</p>
             <div className="mt-5 space-y-4 text-sm leading-7 text-white/74">
               <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">{session.creativeBible}</div>
-              <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Allowed motifs: {session.allowedMotifs}</div>
+              {session.allowedMotifs ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Allowed motifs: {session.allowedMotifs}</div>
+              ) : null}
               <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Blocked themes: {session.bannedTerms}</div>
               <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Motion rules: {session.motionRules}</div>
+              {session.audiencePromptGuide ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Audience guide: {session.audiencePromptGuide}</div>
+              ) : null}
+              {session.negativePrompt ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Negative prompt: {session.negativePrompt}</div>
+              ) : null}
+              {session.systemPrompt ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">System prompt: {session.systemPrompt}</div>
+              ) : null}
+              {session.automoderationPrompt ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Automoderation: {session.automoderationPrompt}</div>
+              ) : null}
             </div>
           </div>
         </div>

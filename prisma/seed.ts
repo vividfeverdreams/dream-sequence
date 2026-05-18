@@ -1,5 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "@/lib/auth-core";
+import {
+  defaultAudiencePromptGuide,
+  defaultAutomoderationPrompt,
+  defaultNegativePrompt,
+  defaultRemixPromptTemplate,
+  defaultSystemPrompt
+} from "@/lib/session-defaults";
 import { createSessionCode } from "@/lib/utils";
 
 const prisma = new PrismaClient();
@@ -44,6 +51,11 @@ async function main() {
         motionRules: "slow camera drift, pulse on phrase changes, never become chaotic or shaky",
         basePrompt:
           "A looping wide cinematic abstract concert visual with mirrored architecture, chrome fog, pulse halos, and elegant nightclub motion.",
+        systemPrompt: defaultSystemPrompt,
+        automoderationPrompt: defaultAutomoderationPrompt,
+        audiencePromptGuide: defaultAudiencePromptGuide,
+        remixPromptTemplate: defaultRemixPromptTemplate,
+        negativePrompt: defaultNegativePrompt,
         status: "draft",
         venueSafeMode: true,
         autoSelectEnabled: true,

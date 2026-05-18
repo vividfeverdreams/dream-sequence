@@ -4,11 +4,29 @@ import { LoginForm } from "@/components/login-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+type LoginPageProps = {
+  searchParams?: Promise<{
+    next?: string | string[];
+  }>;
+};
+
+function getSafeRedirect(next?: string | string[]) {
+  const value = Array.isArray(next) ? next[0] : next;
+
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/sessions";
+  }
+
+  return value;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = searchParams ? await searchParams : {};
+  const redirectTo = getSafeRedirect(params.next);
   const user = await getCurrentUser();
 
   if (user) {
-    redirect("/dashboard");
+    redirect(redirectTo);
   }
 
   return (
@@ -35,7 +53,7 @@ export default async function LoginPage() {
         </section>
 
         <section className="p-8 lg:p-10">
-          <LoginForm />
+          <LoginForm redirectTo={redirectTo} />
         </section>
       </div>
     </main>

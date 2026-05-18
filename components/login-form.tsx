@@ -2,7 +2,11 @@
 
 import { FormEvent, useState } from "react";
 
-export function LoginForm() {
+type LoginFormProps = {
+  redirectTo?: string;
+};
+
+export function LoginForm({ redirectTo = "/sessions" }: LoginFormProps) {
   const [email, setEmail] = useState("dj@example.com");
   const [password, setPassword] = useState("crowdremix-demo");
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +37,7 @@ export function LoginForm() {
       }
 
       // Force a full navigation so the freshly set auth cookie is picked up reliably.
-      window.location.assign("/dashboard");
+      window.location.assign(redirectTo);
     } catch {
       setError("Unable to sign in.");
     } finally {

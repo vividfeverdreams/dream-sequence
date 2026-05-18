@@ -35,4 +35,20 @@ describe("heuristicAssessment", () => {
     expect(result.decision).toBe("rejected");
     expect(result.flags).toContain("blocked-term");
   });
+
+  it("uses a session-specific remix prompt template", () => {
+    const result = heuristicAssessment({
+      submissionText: "make the pulse halos turn silver on the drop",
+      session: {
+        ...session,
+        remixPromptTemplate:
+          "CUSTOM TEMPLATE for {artistName}: crowd asked for {submissionText}; avoid {negativePrompt}.",
+        negativePrompt: "logos and text"
+      },
+      recentWinningPrompts: []
+    });
+
+    expect(result.winningPrompt).toContain("CUSTOM TEMPLATE");
+    expect(result.winningPrompt).toContain("logos and text");
+  });
 });
