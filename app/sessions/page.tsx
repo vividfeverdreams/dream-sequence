@@ -5,9 +5,17 @@ import { formatRelativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function SessionsPage() {
+type SessionsPageProps = {
+  searchParams?: Promise<{
+    verified?: string | string[];
+  }>;
+};
+
+export default async function SessionsPage({ searchParams }: SessionsPageProps) {
   const user = await requireUser();
   const latestSession = await getPrimarySessionForUser(user.id);
+  const params = searchParams ? await searchParams : {};
+  const verified = Array.isArray(params.verified) ? params.verified[0] : params.verified;
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-6 py-8 lg:px-10">
@@ -24,6 +32,12 @@ export default async function SessionsPage() {
           Back Home
         </Link>
       </header>
+
+      {verified === "1" ? (
+        <div className="mt-8 rounded-md border border-[#baff39]/35 bg-[#baff39]/10 px-4 py-3 text-sm font-medium text-[#f1ffd5]">
+          Email verified. Your account is ready.
+        </div>
+      ) : null}
 
       <section className="mt-10 grid gap-5 lg:grid-cols-2">
         <div className="panel p-6">

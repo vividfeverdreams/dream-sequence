@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 type LoginPageProps = {
   searchParams?: Promise<{
     next?: string | string[];
+    verified?: string | string[];
   }>;
 };
 
@@ -20,9 +21,20 @@ function getSafeRedirect(next?: string | string[]) {
   return value;
 }
 
+function getVerificationNotice(verified?: string | string[]) {
+  const value = Array.isArray(verified) ? verified[0] : verified;
+
+  if (value === "invalid") {
+    return "That verification link is invalid or expired. Request a new link from the sign-in form.";
+  }
+
+  return null;
+}
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = searchParams ? await searchParams : {};
   const redirectTo = getSafeRedirect(params.next);
+  const notice = getVerificationNotice(params.verified);
   const user = await getCurrentUser();
 
   if (user) {
@@ -53,7 +65,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </section>
 
         <section className="p-8 lg:p-10">
-          <LoginForm redirectTo={redirectTo} />
+          <LoginForm redirectTo={redirectTo} notice={notice} />
         </section>
       </div>
     </main>

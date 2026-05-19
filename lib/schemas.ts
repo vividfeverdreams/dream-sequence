@@ -12,6 +12,22 @@ export const loginSchema = z.object({
   password: z.string().min(8)
 });
 
+export const signupSchema = z
+  .object({
+    displayName: z.string().trim().min(2).max(80),
+    email: z.string().trim().email(),
+    password: z.string().min(8).max(128),
+    confirmPassword: z.string().min(8).max(128)
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"]
+  });
+
+export const resendVerificationSchema = z.object({
+  email: z.string().trim().email()
+});
+
 export const profileSchema = z.object({
   displayName: z.string().trim().min(2).max(80),
   avatarUrl: z.string().trim().url().max(500).optional().or(z.literal(""))

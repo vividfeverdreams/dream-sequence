@@ -20,12 +20,14 @@ async function main() {
       email
     },
     update: {
-      displayName: "Demo DJ"
+      displayName: "Demo DJ",
+      emailVerifiedAt: new Date()
     },
     create: {
       email,
       passwordHash: hashPassword(password),
-      displayName: "Demo DJ"
+      displayName: "Demo DJ",
+      emailVerifiedAt: new Date()
     }
   });
 

@@ -43,11 +43,16 @@ ensureSchema();
 ensureColumn("User", "avatarUrl", "TEXT");
 ensureColumn("User", "openAiApiKeyEncrypted", "TEXT");
 ensureColumn("User", "openAiApiKeyLast4", "TEXT");
+const addedEmailVerifiedColumn = ensureColumn("User", "emailVerifiedAt", "DATETIME");
 ensureColumn("DJSession", "systemPrompt", "TEXT");
 ensureColumn("DJSession", "automoderationPrompt", "TEXT");
 ensureColumn("DJSession", "audiencePromptGuide", "TEXT");
 ensureColumn("DJSession", "remixPromptTemplate", "TEXT");
 ensureColumn("DJSession", "negativePrompt", "TEXT");
+ensureEmailVerificationTokenTable();
+if (addedEmailVerifiedColumn) {
+  backfillExistingUsersAsVerified();
+}
 ensureDemoData();
 
 if (process.env.NODE_ENV !== "production") {
@@ -98,10 +103,43 @@ function ensureColumn(table: string, column: string, typeDefinition: string) {
   }>;
 
   if (columns.some((entry) => entry.name === column)) {
-    return;
+    return false;
   }
 
   sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${typeDefinition}`);
+  return true;
+}
+
+function ensureEmailVerificationTokenTable() {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS "EmailVerificationToken" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "tokenHash" TEXT NOT NULL,
+      "expiresAt" DATETIME NOT NULL,
+      "usedAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "EmailVerificationToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `);
+  sqlite.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "EmailVerificationToken_tokenHash_key" ON "EmailVerificationToken"("tokenHash")`
+  );
+  sqlite.exec(
+    `CREATE INDEX IF NOT EXISTS "EmailVerificationToken_userId_createdAt_idx" ON "EmailVerificationToken"("userId", "createdAt")`
+  );
+  sqlite.exec(
+    `CREATE INDEX IF NOT EXISTS "EmailVerificationToken_expiresAt_idx" ON "EmailVerificationToken"("expiresAt")`
+  );
+}
+
+function backfillExistingUsersAsVerified() {
+  sqlite.exec(`
+    UPDATE "User"
+    SET "emailVerifiedAt" = COALESCE("createdAt", CURRENT_TIMESTAMP)
+    WHERE "emailVerifiedAt" IS NULL
+  `);
 }
 
 function ensureDemoData() {
@@ -121,6 +159,9 @@ function ensureDemoData() {
     if (existingUserById.email !== email) {
       updateRow("User", { id: userId }, { email }, { touchUpdatedAt: true });
     }
+    if (!existingUserById.emailVerifiedAt) {
+      updateRow("User", { id: userId }, { emailVerifiedAt: new Date() }, { touchUpdatedAt: true });
+    }
     ensureDemoSession(userId, sessionId, playbackId);
     return;
   }
@@ -130,7 +171,7 @@ function ensureDemoData() {
     updateRow(
       "User",
       { email },
-      { id: userId, passwordHash: hashPassword(password), displayName: "Demo DJ" },
+      { id: userId, passwordHash: hashPassword(password), displayName: "Demo DJ", emailVerifiedAt: new Date() },
       { touchUpdatedAt: true }
     );
     updateRow("DJSession", { userId: String(existingUserByEmail.id) }, { userId }, { touchUpdatedAt: true });
@@ -143,7 +184,8 @@ function ensureDemoData() {
     id: userId,
     email,
     passwordHash: hashPassword(password),
-    displayName: "Demo DJ"
+    displayName: "Demo DJ",
+    emailVerifiedAt: new Date()
   });
 
   ensureDemoSession(userId, sessionId, playbackId);
@@ -657,12 +699,63 @@ function createDbApi(): any {
       async findUnique(args: { where: WhereInput; select?: Record<string, boolean> }) {
         return applySelect(getUser(args.where), args.select);
       },
+      async create(args: { data: Record<string, unknown>; select?: Record<string, boolean> }) {
+        const id = randomUUID();
+
+        insertRow("User", {
+          id,
+          email: args.data.email,
+          passwordHash: args.data.passwordHash,
+          displayName: args.data.displayName,
+          emailVerifiedAt: args.data.emailVerifiedAt ?? null,
+          avatarUrl: args.data.avatarUrl ?? null,
+          openAiApiKeyEncrypted: args.data.openAiApiKeyEncrypted ?? null,
+          openAiApiKeyLast4: args.data.openAiApiKeyLast4 ?? null
+        });
+
+        return applySelect(getUser({ id }), args.select);
+      },
       async update(args: { where: WhereInput; data: Record<string, unknown>; select?: Record<string, boolean> }) {
         updateRow("User", args.where, args.data, {
           touchUpdatedAt: true
         });
 
         return applySelect(getUser(args.where), args.select);
+      }
+    },
+    emailVerificationToken: {
+      async create(args: { data: Record<string, unknown> }) {
+        const id = randomUUID();
+
+        insertRow("EmailVerificationToken", {
+          id,
+          userId: args.data.userId,
+          tokenHash: args.data.tokenHash,
+          expiresAt: args.data.expiresAt,
+          usedAt: args.data.usedAt ?? null
+        });
+
+        return getOne<Record<string, unknown>>("EmailVerificationToken", {
+          id
+        });
+      },
+      async findUnique(args: { where: WhereInput }) {
+        return getOne<Record<string, unknown>>("EmailVerificationToken", args.where) ?? null;
+      },
+      async findFirst(args: { where: WhereInput; orderBy?: OrderByInput }) {
+        return getOne<Record<string, unknown>>("EmailVerificationToken", args.where, args.orderBy) ?? null;
+      },
+      async update(args: { where: WhereInput; data: Record<string, unknown> }) {
+        updateRow("EmailVerificationToken", args.where, args.data, {
+          touchUpdatedAt: true
+        });
+
+        return getOne<Record<string, unknown>>("EmailVerificationToken", args.where) ?? null;
+      },
+      async updateMany(args: { where: WhereInput; data: Record<string, unknown> }) {
+        updateRow("EmailVerificationToken", args.where, args.data, {
+          touchUpdatedAt: true
+        });
       }
     },
     dJSession: {

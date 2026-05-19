@@ -47,7 +47,8 @@ export default async function ProfilePage() {
           initialUser={{
             email: String(user.email),
             displayName: String(user.displayName),
-            avatarUrl: user.avatarUrl ? String(user.avatarUrl) : null
+            avatarUrl: user.avatarUrl ? String(user.avatarUrl) : null,
+            emailVerified: Boolean(user.emailVerifiedAt)
           }}
           initialOpenAiStatus={openAiStatus}
         />

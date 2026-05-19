@@ -13,6 +13,7 @@ model User {
   email                 String       @unique
   passwordHash          String
   displayName           String
+  emailVerifiedAt       DateTime?
   avatarUrl             String?
   openAiApiKeyEncrypted String?
   openAiApiKeyLast4     String?
@@ -20,6 +21,21 @@ model User {
   updatedAt             DateTime     @updatedAt
   sessions              DJSession[]
   auditEvents           AuditEvent[]
+  verificationTokens    EmailVerificationToken[]
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 model DJSession {

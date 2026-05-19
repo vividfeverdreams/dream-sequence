@@ -42,11 +42,15 @@ export async function PUT(request: Request) {
     select: {
       email: true,
       displayName: true,
-      avatarUrl: true
+      avatarUrl: true,
+      emailVerifiedAt: true
     }
   });
 
   return NextResponse.json({
-    user: updatedUser
+    user: {
+      ...updatedUser,
+      emailVerified: Boolean(updatedUser.emailVerifiedAt)
+    }
   });
 }

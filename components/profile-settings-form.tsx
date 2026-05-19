@@ -8,6 +8,7 @@ type ProfileUser = {
   email: string;
   displayName: string;
   avatarUrl: string | null;
+  emailVerified: boolean;
 };
 
 type Feedback = {
@@ -220,7 +221,8 @@ export function ProfileSettingsForm({
         </div>
 
         <div className="mt-6 rounded-md border border-[#34383c] bg-[#111315] px-4 py-4 text-sm leading-7 text-[#c9c7bd]">
-          OpenAI status: {describeOpenAiStatus(openAiStatus)}
+          <p>OpenAI status: {describeOpenAiStatus(openAiStatus)}</p>
+          <p className="mt-2">Email status: {profile.emailVerified ? "Verified" : "Needs verification"}</p>
         </div>
       </section>
 
