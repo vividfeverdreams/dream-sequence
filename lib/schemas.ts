@@ -85,16 +85,41 @@ export const sessionFormSchema = z.object({
   autoSelectEnabled: z.boolean().default(true)
 });
 
+const nullableBlankToString = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return typeof value === "string" ? value : String(value);
+};
+
+const optionalEnhanceText = (max: number) =>
+  z.preprocess(nullableBlankToString, z.string().max(max).default(""));
+
+const defaultedEnhanceBoolean = (defaultValue: boolean) =>
+  z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      return value.toLowerCase() !== "false";
+    }
+
+    return value;
+  }, z.boolean().default(defaultValue));
+
 export const sessionEnhanceSchema = z.object({
   target: z.enum(["creativeBible", "basePrompt"]),
-  creativeBible: z.string().max(1000).default(""),
-  allowedMotifs: z.string().max(500).default(""),
-  allowedMotifsEnabled: z.boolean().default(true),
-  bannedTerms: z.string().max(500).default(""),
-  colorPalette: z.string().max(250).default(""),
-  colorPaletteEnabled: z.boolean().default(true),
-  motionRules: z.string().max(400).default(""),
-  basePrompt: z.string().max(1400).default("")
+  creativeBible: optionalEnhanceText(1000),
+  allowedMotifs: optionalEnhanceText(500),
+  allowedMotifsEnabled: defaultedEnhanceBoolean(true),
+  bannedTerms: optionalEnhanceText(500),
+  colorPalette: optionalEnhanceText(250),
+  colorPaletteEnabled: defaultedEnhanceBoolean(true),
+  motionRules: optionalEnhanceText(400),
+  basePrompt: optionalEnhanceText(1400),
+  imageReferenceUrl: optionalEnhanceText(500)
 });
 
 export const publicSubmissionSchema = z.object({

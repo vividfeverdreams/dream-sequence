@@ -232,7 +232,8 @@ export function SessionSetupForm() {
           colorPalette: form.colorPalette,
           colorPaletteEnabled: form.colorPaletteEnabled,
           motionRules: form.motionRules,
-          basePrompt: form.basePrompt
+          basePrompt: form.basePrompt,
+          imageReferenceUrl: form.imageReferenceUrl
         })
       });
       const payload = (await response.json().catch(() => null)) as {

@@ -78,6 +78,7 @@ export async function POST(request: Request) {
           : [
               "You write optimized base prompts for looping AI concert visuals.",
               "Use the full session context to produce one polished base render prompt.",
+              "An image reference URL may be present, but it is optional context only; never require it and never mention needing one.",
               "The prompt should describe a loopable Sora-style visual with subject, environment, texture, camera behavior, palette if enabled, motifs if enabled, and motion constraints.",
               "Keep it venue-safe, avoid copyrighted characters, avoid literal performers unless the user explicitly supplied them, and do not include markdown.",
               "Return only the optimized base prompt."
@@ -95,7 +96,8 @@ export async function POST(request: Request) {
                 bannedTerms: input.bannedTerms,
                 colorPalette: input.colorPaletteEnabled ? input.colorPalette : "",
                 motionRules: input.motionRules,
-                basePrompt: input.basePrompt
+                basePrompt: input.basePrompt,
+                imageReferenceUrl: input.imageReferenceUrl
               })
             }
           ]
@@ -139,6 +141,7 @@ function fallbackEnhancement(input: SessionEnhanceInput) {
       input.allowedMotifsEnabled && input.allowedMotifs ? `Use motifs such as ${input.allowedMotifs}.` : "",
       input.colorPaletteEnabled && input.colorPalette ? `Work within a ${input.colorPalette} palette.` : "",
       input.motionRules ? `Motion rules: ${input.motionRules}.` : "",
+      input.imageReferenceUrl ? `Use the image reference only as optional visual context: ${input.imageReferenceUrl}.` : "",
       input.bannedTerms ? `Avoid ${input.bannedTerms}.` : "",
       "Make it seamless, venue-safe, high contrast, and suitable for a projector or LED wall."
     ].join(" ")
