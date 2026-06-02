@@ -72,6 +72,7 @@ export function SessionSetupForm() {
   const [setupStep, setSetupStep] = useState<"session" | "audience">("session");
   const [origin, setOrigin] = useState("");
   const [confirmedAudienceSlug, setConfirmedAudienceSlug] = useState("");
+  const [confirmedAudienceUrl, setConfirmedAudienceUrl] = useState("");
   const [audienceUrlFeedback, setAudienceUrlFeedback] = useState<string | null>(null);
   const [isCheckingAudienceUrl, setIsCheckingAudienceUrl] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +91,8 @@ export function SessionSetupForm() {
     examples.audienceUrlName;
   const audienceSlugCandidate = normalizeAudienceSlug(form.audienceUrlName || suggestedAudienceSlug);
   const audiencePath = audienceSlugCandidate ? `/r/${audienceSlugCandidate}` : "/r/your-show";
-  const confirmedAudienceUrl = confirmedAudienceSlug ? `${origin || "http://localhost:3000"}/r/${confirmedAudienceSlug}` : "";
   const audienceSlugConfirmed = Boolean(confirmedAudienceSlug && confirmedAudienceSlug === audienceSlugCandidate);
+  const audienceUrlPreview = confirmedAudienceUrl || `${origin || "http://localhost:3000"}${audiencePath}`;
 
   function updateTextField(field: TextFieldName, value: string) {
     setForm((current) => ({
@@ -111,6 +112,7 @@ export function SessionSetupForm() {
 
     if (confirmedAudienceSlug && normalizedValue !== confirmedAudienceSlug) {
       setConfirmedAudienceSlug("");
+      setConfirmedAudienceUrl("");
     }
   }
 
@@ -127,10 +129,11 @@ export function SessionSetupForm() {
       const payload = (await response.json().catch(() => null)) as {
         available?: boolean;
         code?: string;
+        url?: string;
         error?: string;
       } | null;
 
-      if (!response.ok || !payload?.code) {
+      if (!response.ok || !payload?.code || !payload?.url) {
         throw new Error(payload?.error ?? "Could not check that audience URL.");
       }
 
@@ -143,9 +146,11 @@ export function SessionSetupForm() {
         audienceUrlName: payload.code ?? audienceSlugCandidate
       }));
       setConfirmedAudienceSlug(payload.code);
+      setConfirmedAudienceUrl(payload.url);
       setAudienceUrlFeedback("Audience URL confirmed. QR code is ready.");
     } catch (error) {
       setConfirmedAudienceSlug("");
+      setConfirmedAudienceUrl("");
       setAudienceUrlFeedback(error instanceof Error ? error.message : "Could not check that audience URL.");
     } finally {
       setIsCheckingAudienceUrl(false);
@@ -538,7 +543,7 @@ export function SessionSetupForm() {
                 <div className="rounded-md border border-white/10 bg-black/20 px-4 py-4">
                   <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">Public URL Preview</p>
                   <p className="mt-3 break-all font-mono text-sm text-white/80">
-                    {(origin || "http://localhost:3000") + audiencePath}
+                    {audienceUrlPreview}
                   </p>
                 </div>
 

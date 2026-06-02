@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { slugifyCode } from "@/lib/utils";
 
 export async function GET(request: Request) {
@@ -36,10 +37,31 @@ export async function GET(request: Request) {
       code
     }
   });
+  const path = `/r/${code}`;
 
   return NextResponse.json({
     code,
-    path: `/r/${code}`,
+    path,
+    url: `${getPublicAppOrigin(request)}${path}`,
     available: !existingSession
   });
+}
+
+function getPublicAppOrigin(request: Request) {
+  const requestOrigin = new URL(request.url).origin;
+  const configuredAppUrl = env.appUrl.trim();
+
+  if (!configuredAppUrl) {
+    return requestOrigin;
+  }
+
+  try {
+    const configuredUrl = new URL(configuredAppUrl);
+    const isLocalDefault =
+      configuredUrl.hostname === "localhost" || configuredUrl.hostname === "127.0.0.1";
+
+    return isLocalDefault ? requestOrigin : configuredUrl.origin;
+  } catch {
+    return requestOrigin;
+  }
 }

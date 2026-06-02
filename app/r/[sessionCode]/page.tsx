@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { PublicSubmissionForm } from "@/components/public-submission-form";
 
@@ -19,7 +18,37 @@ export default async function PublicSubmissionPage({ params }: PublicRouteProps)
   });
 
   if (!session) {
-    notFound();
+    return (
+      <main className="mx-auto flex min-h-screen max-w-3xl items-center px-6 py-12">
+        <div className="panel w-full overflow-hidden">
+          <div className="border-b border-white/10 bg-white/[0.04] px-6 py-8 sm:px-8">
+            <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">Crowd Remix Portal</p>
+            <h1 className="mt-4 text-4xl font-semibold text-white">Audience Link Ready</h1>
+            <p className="mt-5 max-w-2xl text-sm leading-7 text-white/70">
+              This audience URL has not been attached to a live session yet. Once the DJ creates and starts the session,
+              this same link will accept crowd remix ideas.
+            </p>
+          </div>
+
+          <div className="px-6 py-8 sm:px-8">
+            <div className="rounded-4xl border border-amber-300/20 bg-amber-300/8 px-5 py-4">
+              <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-amber-200/90">Queue Offline</p>
+              <p className="mt-3 text-sm leading-7 text-white/78">
+                Keep this QR code or link. The room is not accepting submissions yet, but the address is valid.
+              </p>
+            </div>
+
+            <div className="mt-5">
+              <PublicSubmissionForm
+                sessionCode={sessionCode}
+                disabled
+                disabledMessage="The DJ has not created and started this session yet."
+              />
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   const intakeDisabled = session.status !== "live";

@@ -40,22 +40,12 @@ export async function POST(request: Request) {
   const hasStartingPoint =
     input.target === "creativeBible"
       ? input.creativeBible.trim().length > 0
-      : [
-          input.creativeBible,
-          input.allowedMotifsEnabled ? input.allowedMotifs : "",
-          input.bannedTerms,
-          input.colorPaletteEnabled ? input.colorPalette : "",
-          input.motionRules,
-          input.basePrompt
-        ].some((value) => value.trim().length > 0);
+      : true;
 
   if (!hasStartingPoint) {
     return NextResponse.json(
       {
-        error:
-          input.target === "creativeBible"
-            ? "Write a rough creative direction first."
-            : "Add creative context before enhancing the base prompt."
+        error: "Write a rough creative direction first."
       },
       {
         status: 400
