@@ -384,6 +384,8 @@ export async function reconcilePendingRenderJobs(sessionId: string) {
     await reconcileRenderJob(job.id);
   }
 
+  await attemptAutomatedSelection(sessionId);
+
   return jobs.length;
 }
 
