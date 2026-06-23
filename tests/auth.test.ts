@@ -3,7 +3,7 @@ import { createSessionToken, hashPassword, parseSessionToken, verifyPassword } f
 
 describe("auth helpers", () => {
   it("hashes and verifies passwords", () => {
-    const password = "crowdremix-demo";
+    const password = "dreamsequence-demo";
     const hash = hashPassword(password);
 
     expect(verifyPassword(password, hash)).toBe(true);

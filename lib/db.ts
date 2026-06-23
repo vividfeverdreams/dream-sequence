@@ -31,11 +31,11 @@ type SqlInputValue = string | number | bigint | Uint8Array | null;
 
 declare global {
   // eslint-disable-next-line no-var
-  var crowdRemixSqlite: DatabaseSync | undefined;
+  var dreamSequenceSqlite: DatabaseSync | undefined;
 }
 
 const sqlite =
-  global.crowdRemixSqlite ??
+  global.dreamSequenceSqlite ??
   new DatabaseSync(resolveDatabasePath(env.databaseUrl));
 
 sqlite.exec("PRAGMA foreign_keys = ON");
@@ -56,7 +56,7 @@ if (addedEmailVerifiedColumn) {
 ensureDemoData();
 
 if (process.env.NODE_ENV !== "production") {
-  global.crowdRemixSqlite = sqlite;
+  global.dreamSequenceSqlite = sqlite;
 }
 
 const booleanColumns = {
@@ -144,7 +144,7 @@ function backfillExistingUsersAsVerified() {
 
 function ensureDemoData() {
   const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
-  const password = process.env.SEED_DJ_PASSWORD ?? "crowdremix-demo";
+  const password = process.env.SEED_DJ_PASSWORD ?? "dreamsequence-demo";
   const userId = "demo-dj-user";
   const sessionId = "demo-neon-echo-session";
   const playbackId = "demo-neon-echo-playback";

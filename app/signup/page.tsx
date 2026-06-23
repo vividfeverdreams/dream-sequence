@@ -15,7 +15,7 @@ export default async function SignupPage() {
     <main className="flex min-h-screen items-center justify-center px-6 py-12">
       <div className="panel grid w-full max-w-5xl overflow-hidden lg:grid-cols-[0.95fr_1.05fr]">
         <section className="border-b border-white/10 bg-white/[0.04] p-8 lg:border-b-0 lg:border-r lg:p-10">
-          <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">Crowd Remix</p>
+          <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">Dream Sequence</p>
           <h1 className="mt-5 text-4xl font-semibold text-white">Create the control room before the crowd arrives.</h1>
           <p className="mt-5 max-w-md text-base leading-7 text-white/70">
             Verified accounts keep session setup, profile keys, and dashboard access tied to the right DJ.

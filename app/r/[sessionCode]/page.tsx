@@ -32,7 +32,7 @@ export default async function PublicSubmissionPage({ params }: PublicRouteProps)
     <main className="mx-auto flex min-h-screen max-w-3xl items-center px-6 py-12">
       <div className="panel w-full overflow-hidden">
         <div className="border-b border-white/10 bg-white/[0.04] px-6 py-8 sm:px-8">
-          <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">Crowd Remix Portal</p>
+          <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">Dream Sequence Portal</p>
           <h1 className="mt-4 text-4xl font-semibold text-white">{session.artistName}</h1>
           <p className="mt-3 text-base text-white/72">Track focus: {session.trackName}</p>
           <p className="mt-5 max-w-2xl text-sm leading-7 text-white/70">

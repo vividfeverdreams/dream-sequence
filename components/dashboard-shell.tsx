@@ -153,7 +153,7 @@ export function DashboardShell({
     const popupTop = Math.max(0, Math.round(window.screenY + (window.outerHeight - popupHeight) / 2));
     const popup = window.open(
       absoluteShowLink,
-      "crowd-remix-show",
+      "dream-sequence-show",
       `popup=yes,width=${popupWidth},height=${popupHeight},left=${popupLeft},top=${popupTop},resizable=yes,scrollbars=no`
     );
 
@@ -478,7 +478,7 @@ export function DashboardShell({
                 session.renderJobs.map((job: any) => (
                   <div key={job.id} className="rounded-4xl border border-white/10 bg-black/20 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">{job.mode === "seed" ? "Seed Render" : "Crowd Remix"}</p>
+                      <p className="text-sm font-semibold text-white">{job.mode === "seed" ? "Seed Render" : "Dream Sequence Remix"}</p>
                       <span className="text-xs uppercase tracking-[0.24em] text-white/40">{job.status}</span>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-white/68">{job.promptText}</p>

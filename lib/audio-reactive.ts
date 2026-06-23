@@ -200,15 +200,15 @@ export function sanitizeAudioReactiveState(value: unknown): AudioReactiveSharedS
 }
 
 export function getAudioReactiveStorageKey(sessionId: string) {
-  return `crowd-remix:audio-reactive:${sessionId}`;
+  return `dream-sequence:audio-reactive:${sessionId}`;
 }
 
 export function getAudioReactiveDeviceStorageKey(sessionId: string) {
-  return `crowd-remix:audio-reactive-device:${sessionId}`;
+  return `dream-sequence:audio-reactive-device:${sessionId}`;
 }
 
 export function getAudioReactiveChannelName(sessionId: string) {
-  return `crowd-remix:audio-reactive:${sessionId}`;
+  return `dream-sequence:audio-reactive:${sessionId}`;
 }
 
 export function clamp(value: number, min = 0, max = 1) {

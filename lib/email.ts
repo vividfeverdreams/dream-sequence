@@ -29,18 +29,18 @@ export async function sendVerificationEmail(input: VerificationEmailInput) {
   await transporter.sendMail({
     from: env.smtpFrom,
     to: input.to,
-    subject: "Verify your Crowd Remix account",
+    subject: "Verify your Dream Sequence account",
     text: [
       `Hi ${input.displayName},`,
       "",
-      "Verify your Crowd Remix account to finish setting up your DJ dashboard.",
+      "Verify your Dream Sequence account to finish setting up your DJ dashboard.",
       input.verificationUrl,
       "",
       "This link expires in 24 hours."
     ].join("\n"),
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111315;">
-        <h1 style="font-size: 22px;">Verify your Crowd Remix account</h1>
+        <h1 style="font-size: 22px;">Verify your Dream Sequence account</h1>
         <p>Hi ${escapeHtml(input.displayName)},</p>
         <p>Verify your account to finish setting up your DJ dashboard.</p>
         <p>

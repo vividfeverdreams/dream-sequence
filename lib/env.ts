@@ -16,7 +16,7 @@ export const env = {
   smtpPassword: process.env.SMTP_PASSWORD ?? "",
   smtpFrom: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "",
   smtpSecure: process.env.SMTP_SECURE === "true",
-  sessionCookieName: "crowd-remix-session"
+  sessionCookieName: "dream-sequence-session"
 } as const;
 
 export function hasOpenAiCredentials() {

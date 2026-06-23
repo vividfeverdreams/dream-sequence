@@ -260,7 +260,7 @@ export async function queueAutomatedRender(
       sessionId,
       sourceSubmissionId: submissionId,
       kind: mode,
-      title: mode === "seed" ? "Seed Loop" : "Crowd Remix",
+      title: mode === "seed" ? "Seed Loop" : "Dream Sequence Remix",
       promptText: renderPrompt,
       status: "processing"
     }

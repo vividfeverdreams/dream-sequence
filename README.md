@@ -1,6 +1,6 @@
-# Crowd Remix
+# Dream Sequence
 
-Crowd Remix is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused Sora remix prompt, and holds the next completed loop for a manual visual switch or an auto switch detected from the Rekordbox/DJ audio feed.
+Dream Sequence is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused Sora remix prompt, and holds the next completed loop for a manual visual switch or an auto switch detected from the Rekordbox/DJ audio feed.
 
 ## What This MVP Includes
 
@@ -66,7 +66,7 @@ npm run dev
 The seed script creates:
 
 - Email: `dj@example.com`
-- Password: `crowdremix-demo`
+- Password: `dreamsequence-demo`
 
 You can override those values with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`.
 
