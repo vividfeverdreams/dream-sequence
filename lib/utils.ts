@@ -5,16 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-export function slugifyCode(input: string) {
+export function slugifyCode(input: string, maxLength = 18) {
   return input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
-    .slice(0, 18);
+    .slice(0, maxLength)
+    .replace(/(^-|-$)/g, "");
 }
 
 export function createSessionCode(base: string) {
-  const slug = slugifyCode(base) || "show";
+  const slug = slugifyCode(base, 18) || "show";
   const suffix = Math.random().toString(36).slice(2, 6);
   return `${slug}-${suffix}`;
 }

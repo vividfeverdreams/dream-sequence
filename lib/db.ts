@@ -1,7 +1,16 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
+import { hashPassword } from "@/lib/auth-core";
 import { env } from "@/lib/env";
+import {
+  defaultAudiencePromptGuide,
+  defaultAutomoderationPrompt,
+  defaultNegativePrompt,
+  defaultRemixPromptTemplate,
+  defaultSystemPrompt
+} from "@/lib/session-defaults";
 
 type WhereValue =
   | string
@@ -22,19 +31,32 @@ type SqlInputValue = string | number | bigint | Uint8Array | null;
 
 declare global {
   // eslint-disable-next-line no-var
-  var crowdRemixSqlite: DatabaseSync | undefined;
+  var dreamSequenceSqlite: DatabaseSync | undefined;
 }
 
 const sqlite =
-  global.crowdRemixSqlite ??
+  global.dreamSequenceSqlite ??
   new DatabaseSync(resolveDatabasePath(env.databaseUrl));
 
 sqlite.exec("PRAGMA foreign_keys = ON");
-ensureColumn("User", "openAiApiKeyEncrypted", 'TEXT');
-ensureColumn("User", "openAiApiKeyLast4", 'TEXT');
+ensureSchema();
+ensureColumn("User", "avatarUrl", "TEXT");
+ensureColumn("User", "openAiApiKeyEncrypted", "TEXT");
+ensureColumn("User", "openAiApiKeyLast4", "TEXT");
+const addedEmailVerifiedColumn = ensureColumn("User", "emailVerifiedAt", "DATETIME");
+ensureColumn("DJSession", "systemPrompt", "TEXT");
+ensureColumn("DJSession", "automoderationPrompt", "TEXT");
+ensureColumn("DJSession", "audiencePromptGuide", "TEXT");
+ensureColumn("DJSession", "remixPromptTemplate", "TEXT");
+ensureColumn("DJSession", "negativePrompt", "TEXT");
+ensureEmailVerificationTokenTable();
+if (addedEmailVerifiedColumn) {
+  backfillExistingUsersAsVerified();
+}
+ensureDemoData();
 
 if (process.env.NODE_ENV !== "production") {
-  global.crowdRemixSqlite = sqlite;
+  global.dreamSequenceSqlite = sqlite;
 }
 
 const booleanColumns = {
@@ -51,16 +73,212 @@ function resolveDatabasePath(databaseUrl: string) {
   return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
 }
 
+function ensureSchema() {
+  const userTable = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get("User");
+
+  if (userTable) {
+    return;
+  }
+
+  const migrationPath = path.join(
+    process.cwd(),
+    "prisma",
+    "migrations",
+    "20260417162000_init",
+    "migration.sql"
+  );
+
+  if (!fs.existsSync(migrationPath)) {
+    throw new Error(`Missing SQLite schema migration: ${migrationPath}`);
+  }
+
+  sqlite.exec(fs.readFileSync(migrationPath, "utf8"));
+}
+
 function ensureColumn(table: string, column: string, typeDefinition: string) {
   const columns = sqlite.prepare(`PRAGMA table_info("${table}")`).all() as Array<{
     name: string;
   }>;
 
   if (columns.some((entry) => entry.name === column)) {
-    return;
+    return false;
   }
 
   sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${typeDefinition}`);
+  return true;
+}
+
+function ensureEmailVerificationTokenTable() {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS "EmailVerificationToken" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "tokenHash" TEXT NOT NULL,
+      "expiresAt" DATETIME NOT NULL,
+      "usedAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "EmailVerificationToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `);
+  sqlite.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "EmailVerificationToken_tokenHash_key" ON "EmailVerificationToken"("tokenHash")`
+  );
+  sqlite.exec(
+    `CREATE INDEX IF NOT EXISTS "EmailVerificationToken_userId_createdAt_idx" ON "EmailVerificationToken"("userId", "createdAt")`
+  );
+  sqlite.exec(
+    `CREATE INDEX IF NOT EXISTS "EmailVerificationToken_expiresAt_idx" ON "EmailVerificationToken"("expiresAt")`
+  );
+}
+
+function backfillExistingUsersAsVerified() {
+  sqlite.exec(`
+    UPDATE "User"
+    SET "emailVerifiedAt" = COALESCE("createdAt", CURRENT_TIMESTAMP)
+    WHERE "emailVerifiedAt" IS NULL
+  `);
+}
+
+function ensureDemoData() {
+  const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
+  const password = process.env.SEED_DJ_PASSWORD ?? "dreamsequence-demo";
+  const userId = "demo-dj-user";
+  const sessionId = "demo-neon-echo-session";
+  const playbackId = "demo-neon-echo-playback";
+  const existingUserById = getUser({
+    id: userId
+  });
+  const existingUserByEmail = getUser({
+    email
+  });
+
+  if (existingUserById) {
+    if (existingUserById.email !== email) {
+      updateRow("User", { id: userId }, { email }, { touchUpdatedAt: true });
+    }
+    if (!existingUserById.emailVerifiedAt) {
+      updateRow("User", { id: userId }, { emailVerifiedAt: new Date() }, { touchUpdatedAt: true });
+    }
+    ensureDemoSession(userId, sessionId, playbackId);
+    return;
+  }
+
+  if (existingUserByEmail) {
+    sqlite.exec("PRAGMA foreign_keys = OFF");
+    updateRow(
+      "User",
+      { email },
+      { id: userId, passwordHash: hashPassword(password), displayName: "Demo DJ", emailVerifiedAt: new Date() },
+      { touchUpdatedAt: true }
+    );
+    updateRow("DJSession", { userId: String(existingUserByEmail.id) }, { userId }, { touchUpdatedAt: true });
+    sqlite.exec("PRAGMA foreign_keys = ON");
+    ensureDemoSession(userId, sessionId, playbackId);
+    return;
+  }
+
+  insertRow("User", {
+    id: userId,
+    email,
+    passwordHash: hashPassword(password),
+    displayName: "Demo DJ",
+    emailVerifiedAt: new Date()
+  });
+
+  ensureDemoSession(userId, sessionId, playbackId);
+}
+
+function ensureDemoSession(userId: string, sessionId: string, playbackId: string) {
+  const existingSession =
+    getOne<Record<string, unknown>>("DJSession", {
+      id: sessionId
+    }) ??
+    getOne<Record<string, unknown>>(
+      "DJSession",
+      {
+        userId
+      },
+      {
+        createdAt: "desc"
+      }
+    );
+
+  if (existingSession) {
+    if (existingSession.id === sessionId && existingSession.userId !== userId) {
+      updateRow("DJSession", { id: sessionId }, { userId }, { touchUpdatedAt: true });
+    }
+
+    backfillSessionCustomizationDefaults(existingSession);
+
+    ensureDemoPlayback(String(existingSession.id), existingSession.id === sessionId ? playbackId : randomUUID());
+    return;
+  }
+
+  insertRow("DJSession", {
+    id: sessionId,
+    userId,
+    code: "neon-echo-demo",
+    name: "Neon Echo Launch Set",
+    artistName: "Neon Echo",
+    trackName: "Skyline Pressure",
+    creativeBible:
+      "Kinetic abstract architecture, mirrored tunnel depth, humid atmosphere, elegant strobe restraint, no literal characters.",
+    allowedMotifs: "laser lattice, liquid chrome, skyline fragments, pulse halos",
+    bannedTerms: "violence, gore, nudity, celebrity, cartoon mascot",
+    colorPalette: "teal, ember, dusk blue, warm sand",
+    motionRules: "slow camera drift, pulse on phrase changes, never become chaotic or shaky",
+    basePrompt:
+      "A looping wide cinematic abstract concert visual with mirrored architecture, chrome fog, pulse halos, and elegant nightclub motion.",
+    systemPrompt: defaultSystemPrompt,
+    automoderationPrompt: defaultAutomoderationPrompt,
+    audiencePromptGuide: defaultAudiencePromptGuide,
+    remixPromptTemplate: defaultRemixPromptTemplate,
+    negativePrompt: defaultNegativePrompt,
+    status: "draft",
+    venueSafeMode: true,
+    autoSelectEnabled: true
+  });
+
+  ensureDemoPlayback(sessionId, playbackId);
+}
+
+function backfillSessionCustomizationDefaults(session: Record<string, unknown>) {
+  const missingDefaults = {
+    ...(session.systemPrompt ? {} : { systemPrompt: defaultSystemPrompt }),
+    ...(session.automoderationPrompt ? {} : { automoderationPrompt: defaultAutomoderationPrompt }),
+    ...(session.audiencePromptGuide ? {} : { audiencePromptGuide: defaultAudiencePromptGuide }),
+    ...(session.remixPromptTemplate ? {} : { remixPromptTemplate: defaultRemixPromptTemplate }),
+    ...(session.negativePrompt ? {} : { negativePrompt: defaultNegativePrompt })
+  };
+
+  if (Object.keys(missingDefaults).length > 0) {
+    updateRow("DJSession", { id: String(session.id) }, missingDefaults, { touchUpdatedAt: false });
+  }
+}
+
+function ensureDemoPlayback(sessionId: string, playbackId: string) {
+  const existingPlayback = getOne<Record<string, unknown>>("PlaybackState", {
+    sessionId
+  });
+
+  if (existingPlayback) {
+    return;
+  }
+
+  insertRow("PlaybackState", {
+    id: playbackId,
+    sessionId,
+    status: "idle",
+    emergencyPaused: false,
+    crossfadeSeconds: 2,
+    currentAssetId: null,
+    nextAssetId: null,
+    fallbackAssetId: null,
+    lastTransitionAt: null
+  });
 }
 
 function toSqlDate(value: Date | string | null | undefined) {
@@ -481,12 +699,63 @@ function createDbApi(): any {
       async findUnique(args: { where: WhereInput; select?: Record<string, boolean> }) {
         return applySelect(getUser(args.where), args.select);
       },
+      async create(args: { data: Record<string, unknown>; select?: Record<string, boolean> }) {
+        const id = randomUUID();
+
+        insertRow("User", {
+          id,
+          email: args.data.email,
+          passwordHash: args.data.passwordHash,
+          displayName: args.data.displayName,
+          emailVerifiedAt: args.data.emailVerifiedAt ?? null,
+          avatarUrl: args.data.avatarUrl ?? null,
+          openAiApiKeyEncrypted: args.data.openAiApiKeyEncrypted ?? null,
+          openAiApiKeyLast4: args.data.openAiApiKeyLast4 ?? null
+        });
+
+        return applySelect(getUser({ id }), args.select);
+      },
       async update(args: { where: WhereInput; data: Record<string, unknown>; select?: Record<string, boolean> }) {
         updateRow("User", args.where, args.data, {
           touchUpdatedAt: true
         });
 
         return applySelect(getUser(args.where), args.select);
+      }
+    },
+    emailVerificationToken: {
+      async create(args: { data: Record<string, unknown> }) {
+        const id = randomUUID();
+
+        insertRow("EmailVerificationToken", {
+          id,
+          userId: args.data.userId,
+          tokenHash: args.data.tokenHash,
+          expiresAt: args.data.expiresAt,
+          usedAt: args.data.usedAt ?? null
+        });
+
+        return getOne<Record<string, unknown>>("EmailVerificationToken", {
+          id
+        });
+      },
+      async findUnique(args: { where: WhereInput }) {
+        return getOne<Record<string, unknown>>("EmailVerificationToken", args.where) ?? null;
+      },
+      async findFirst(args: { where: WhereInput; orderBy?: OrderByInput }) {
+        return getOne<Record<string, unknown>>("EmailVerificationToken", args.where, args.orderBy) ?? null;
+      },
+      async update(args: { where: WhereInput; data: Record<string, unknown> }) {
+        updateRow("EmailVerificationToken", args.where, args.data, {
+          touchUpdatedAt: true
+        });
+
+        return getOne<Record<string, unknown>>("EmailVerificationToken", args.where) ?? null;
+      },
+      async updateMany(args: { where: WhereInput; data: Record<string, unknown> }) {
+        updateRow("EmailVerificationToken", args.where, args.data, {
+          touchUpdatedAt: true
+        });
       }
     },
     dJSession: {
@@ -507,6 +776,11 @@ function createDbApi(): any {
           colorPalette: args.data.colorPalette,
           motionRules: args.data.motionRules,
           basePrompt: args.data.basePrompt,
+          systemPrompt: args.data.systemPrompt ?? null,
+          automoderationPrompt: args.data.automoderationPrompt ?? null,
+          audiencePromptGuide: args.data.audiencePromptGuide ?? null,
+          remixPromptTemplate: args.data.remixPromptTemplate ?? null,
+          negativePrompt: args.data.negativePrompt ?? null,
           imageReferenceUrl: args.data.imageReferenceUrl ?? null,
           smsNumber: args.data.smsNumber ?? null,
           status: args.data.status ?? "draft",

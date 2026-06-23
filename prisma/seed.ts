@@ -1,24 +1,33 @@
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "@/lib/auth-core";
+import {
+  defaultAudiencePromptGuide,
+  defaultAutomoderationPrompt,
+  defaultNegativePrompt,
+  defaultRemixPromptTemplate,
+  defaultSystemPrompt
+} from "@/lib/session-defaults";
 import { createSessionCode } from "@/lib/utils";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
-  const password = process.env.SEED_DJ_PASSWORD ?? "crowdremix-demo";
+  const password = process.env.SEED_DJ_PASSWORD ?? "dreamsequence-demo";
 
   const user = await prisma.user.upsert({
     where: {
       email
     },
     update: {
-      displayName: "Demo DJ"
+      displayName: "Demo DJ",
+      emailVerifiedAt: new Date()
     },
     create: {
       email,
       passwordHash: hashPassword(password),
-      displayName: "Demo DJ"
+      displayName: "Demo DJ",
+      emailVerifiedAt: new Date()
     }
   });
 
@@ -44,6 +53,11 @@ async function main() {
         motionRules: "slow camera drift, pulse on phrase changes, never become chaotic or shaky",
         basePrompt:
           "A looping wide cinematic abstract concert visual with mirrored architecture, chrome fog, pulse halos, and elegant nightclub motion.",
+        systemPrompt: defaultSystemPrompt,
+        automoderationPrompt: defaultAutomoderationPrompt,
+        audiencePromptGuide: defaultAudiencePromptGuide,
+        remixPromptTemplate: defaultRemixPromptTemplate,
+        negativePrompt: defaultNegativePrompt,
         status: "draft",
         venueSafeMode: true,
         autoSelectEnabled: true,

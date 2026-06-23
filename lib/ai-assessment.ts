@@ -2,6 +2,12 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 import { getOpenAiClient } from "@/lib/openai-client";
 import { getEffectiveOpenAiApiKeyForUser } from "@/lib/openai-key-store";
+import {
+  defaultAutomoderationPrompt,
+  defaultNegativePrompt,
+  defaultRemixPromptTemplate,
+  defaultSystemPrompt
+} from "@/lib/session-defaults";
 import { clamp, normalizePromptText, splitList } from "@/lib/utils";
 
 const assessmentSchema = z.object({
@@ -26,6 +32,11 @@ type SessionContext = {
   colorPalette: string;
   motionRules: string;
   basePrompt: string;
+  systemPrompt?: string | null;
+  automoderationPrompt?: string | null;
+  remixPromptTemplate?: string | null;
+  negativePrompt?: string | null;
+  venueSafeMode?: boolean | null;
 };
 
 type AssessmentInput = {
@@ -70,10 +81,18 @@ export async function assessSubmission(input: AssessmentInput): Promise<Submissi
       model: env.openAiTextModel,
       temperature: 0.4,
       instructions: [
-        "You are the crowd prompt safety and remix-ranking engine for a live DJ visual platform.",
-        "You must keep every approved prompt within the DJ's visual DNA.",
-        "Reject prompts that are unsafe, spammy, off-theme, ask for real people, public figures, copyrighted characters, copyrighted music references, or anything that is not venue-safe.",
+        normalizePromptText(input.session.systemPrompt || defaultSystemPrompt),
+        normalizePromptText(input.session.automoderationPrompt || defaultAutomoderationPrompt),
+        input.session.venueSafeMode === false
+          ? "Venue-safe mode is off for this session, but the hard safety baseline still applies."
+          : "Venue-safe mode is on: be conservative for a public club, venue, or festival screen.",
+        "Session-specific prompts may add stricter venue rules, but do not relax the app's hard safety baseline.",
+        "Hard baseline: reject spam, hate, harassment, sexual content, graphic violence, self-harm, real people, public figures, copyrighted characters, copyrighted music references, illegal drug promotion, or anything that is not venue-safe.",
         "For approved prompts, rewrite the input into a single focused remix instruction that preserves the session's current visual identity.",
+        `Use this remix prompt template when writing winningPrompt: ${normalizePromptText(
+          input.session.remixPromptTemplate || defaultRemixPromptTemplate
+        )}`,
+        `Generation negative constraints: ${normalizePromptText(input.session.negativePrompt || defaultNegativePrompt)}`,
         "Return only valid JSON that matches the provided schema."
       ].join(" "),
       input: [
@@ -202,12 +221,26 @@ export function heuristicAssessment(input: AssessmentInput): SubmissionAssessmen
     cohesionScore,
     remixDeltaScore,
     winningPrompt: [
-      `Remix the active loop for ${input.session.artistName} - ${input.session.trackName}.`,
-      `Keep the visual DNA anchored in: ${input.session.creativeBible}.`,
-      `Allowed motifs: ${input.session.allowedMotifs}.`,
-      `Palette: ${input.session.colorPalette}. Motion rules: ${input.session.motionRules}.`,
-      `Make one focused crowd-requested change: ${normalizePromptText(input.submissionText)}.`,
-      "Preserve continuity, camera feel, and venue-safe abstract artistry. No text overlays, no real people, no copyrighted characters."
+      applyRemixTemplate(input.session, normalizePromptText(input.submissionText))
     ].join(" ")
   };
+}
+
+function applyRemixTemplate(session: SessionContext, submissionText: string) {
+  const template = session.remixPromptTemplate || defaultRemixPromptTemplate;
+  const replacements: Record<string, string> = {
+    artistName: session.artistName,
+    trackName: session.trackName,
+    creativeBible: session.creativeBible,
+    allowedMotifs: session.allowedMotifs,
+    bannedTerms: session.bannedTerms,
+    colorPalette: session.colorPalette,
+    motionRules: session.motionRules,
+    basePrompt: session.basePrompt,
+    submissionText,
+    negativePrompt: session.negativePrompt || defaultNegativePrompt
+  };
+
+  const rendered = template.replace(/\{(\w+)\}/g, (match, key: string) => replacements[key] ?? match);
+  return normalizePromptText(rendered);
 }

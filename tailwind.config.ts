@@ -9,21 +9,21 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#091018",
-        plasma: "#10d6a0",
-        ember: "#ff7b53",
-        tide: "#4b8dff",
-        haze: "#ffe8c8"
+        ink: "#151515",
+        plasma: "#baff39",
+        ember: "#ff764d",
+        tide: "#00a7e1",
+        haze: "#f4f1e8"
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(255,255,255,0.08), 0 18px 60px rgba(10,18,35,0.45)"
+        glow: "0 0 0 1px rgba(255,255,255,0.08), 0 18px 55px rgba(0,0,0,0.34)"
       },
       borderRadius: {
-        "4xl": "2rem"
+        "4xl": "0.65rem"
       },
       backgroundImage: {
         "aurora":
-          "radial-gradient(circle at 20% 20%, rgba(16,214,160,0.18), transparent 32%), radial-gradient(circle at 80% 15%, rgba(75,141,255,0.18), transparent 28%), radial-gradient(circle at 50% 80%, rgba(255,123,83,0.18), transparent 30%)"
+          "linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(135deg, rgba(186,255,57,0.12), rgba(0,167,225,0.08), rgba(255,118,77,0.1))"
       },
       fontFamily: {
         sans: ["Avenir Next", "Segoe UI Variable", "Segoe UI", "sans-serif"],

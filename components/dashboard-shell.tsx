@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
+import {
+  AudioReactiveControlsPanel,
+  useAudioReactiveController
+} from "@/components/audio-reactive-controls";
 import type { OpenAiConnectionStatus } from "@/lib/openai-key-store";
 import type { SessionSnapshot } from "@/lib/snapshot";
 import { formatRelativeTime } from "@/lib/utils";
@@ -26,9 +30,11 @@ export function DashboardShell({
   const openAiStatus = initialOpenAiStatus;
 
   const session = deferredSnapshot.session;
+  const audioReactive = useAudioReactiveController(session.id, "dashboard");
   const playback = session.playbackState;
   const publicLink = `/r/${session.code}`;
   const showLink = `/show/${session.id}`;
+  const cleanShowLink = `${showLink}?output=clean`;
   const canStartSession = session.status !== "live";
 
   useEffect(() => {
@@ -63,15 +69,18 @@ export function DashboardShell({
   }, [deferredSnapshot.queueHealth.waitingOnRender, session.id]);
 
   useEffect(() => {
-    setShowUrlDisplay(resolveAbsoluteUrl(showLink));
-  }, [showLink]);
+    setShowUrlDisplay(resolveAbsoluteUrl(cleanShowLink));
+  }, [cleanShowLink]);
 
   async function runControlAction(action: string) {
-    if (action === "skip-next" && !snapshot.session.playbackState?.nextAsset) {
+    const controlAction = action === "cut-next" || action === "fade-next" ? "skip-next" : action;
+    const transitionSeconds = action === "fade-next" ? 2.2 : 0;
+
+    if (controlAction === "skip-next" && !snapshot.session.playbackState?.nextAsset) {
       setControlFeedback(
         snapshot.queueHealth.waitingOnRender
-          ? "Skip To Next is waiting on a ready loop. A remix is still rendering right now."
-          : "Skip To Next only works when a ready next loop is loaded."
+          ? "Visual switching is waiting on a ready loop. A remix is still rendering right now."
+          : "Visual switching only works when a ready next loop is loaded."
       );
       return;
     }
@@ -106,7 +115,8 @@ export function DashboardShell({
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            action
+            action: controlAction,
+            ...(controlAction === "skip-next" ? { transitionSeconds } : {})
           })
         });
 
@@ -117,8 +127,8 @@ export function DashboardShell({
         }
       }
 
-      if (action === "skip-next") {
-        setControlFeedback("Switched the live output to the queued remix.");
+      if (controlAction === "skip-next") {
+        setControlFeedback(action === "fade-next" ? "Requested a fade to the queued remix." : "Requested a hard cut to the queued remix.");
       } else if (action === "fallback-remix") {
         setControlFeedback("Fallback remix queued. The show stays on the current loop until the new render is ready.");
       } else if (action === "pause-selection") {
@@ -136,12 +146,20 @@ export function DashboardShell({
   }
 
   function openShowPopout() {
-    const absoluteShowLink = resolveAbsoluteUrl(showLink);
-    const popup = window.open(absoluteShowLink, "_blank");
+    const absoluteShowLink = resolveAbsoluteUrl(cleanShowLink);
+    const popupWidth = 1280;
+    const popupHeight = 720;
+    const popupLeft = Math.max(0, Math.round(window.screenX + (window.outerWidth - popupWidth) / 2));
+    const popupTop = Math.max(0, Math.round(window.screenY + (window.outerHeight - popupHeight) / 2));
+    const popup = window.open(
+      absoluteShowLink,
+      "dream-sequence-show",
+      `popup=yes,width=${popupWidth},height=${popupHeight},left=${popupLeft},top=${popupTop},resizable=yes,scrollbars=no`
+    );
 
     if (popup) {
       popup.focus();
-      setShowWindowFeedback("Show view opened in a separate window/tab.");
+      setShowWindowFeedback("Show view opened in a 16:9 popout window.");
       return;
     }
 
@@ -151,7 +169,7 @@ export function DashboardShell({
   }
 
   async function copyShowUrl() {
-    const absoluteShowLink = resolveAbsoluteUrl(showLink);
+    const absoluteShowLink = resolveAbsoluteUrl(cleanShowLink);
 
     try {
       await navigator.clipboard.writeText(absoluteShowLink);
@@ -162,32 +180,38 @@ export function DashboardShell({
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-6 py-8 lg:px-10">
+    <main className="mx-auto min-h-screen max-w-7xl px-5 py-6 lg:px-8">
       <header className="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DJ Dashboard</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#baff39]">DJ Dashboard</p>
           <h1 className="mt-4 text-4xl font-semibold text-white">{session.name}</h1>
-          <p className="mt-3 max-w-3xl text-base leading-7 text-white/70">
+          <p className="mt-3 max-w-3xl text-base leading-7 text-[#c9c7bd]">
             {session.artistName} - {session.trackName}. {currentUserName}, this control view keeps the queue moving while the current loop stays protected on screen.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Link href={publicLink} className="rounded-full border border-white/10 px-5 py-2 text-sm text-white/80 transition hover:bg-white/10">
+          <Link href={publicLink} className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
             Audience Form
           </Link>
           <button
             onClick={openShowPopout}
-            className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-ink transition hover:opacity-90"
+            className="rounded-md bg-[#baff39] px-4 py-2 text-sm font-semibold text-[#151515] transition hover:brightness-110"
           >
             Pop Out Show
           </button>
-          <Link href={showLink} className="rounded-full border border-white/10 px-5 py-2 text-sm text-white/80 transition hover:bg-white/10">
+          <Link href={cleanShowLink} className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#00a7e1]">
             Fullscreen Show
+          </Link>
+          <Link href="/sessions/new" className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
+            New Session
+          </Link>
+          <Link href="/profile" className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
+            Profile
           </Link>
           <button
             onClick={() => void runControlAction("logout")}
-            className="rounded-full border border-white/10 px-5 py-2 text-sm text-white/80 transition hover:bg-white/10"
+            className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#ff764d]"
           >
             {workingAction === "logout" ? "Leaving..." : "Logout"}
           </button>
@@ -203,7 +227,7 @@ export function DashboardShell({
 
       {showWindowFeedback ? (
         <section className="mt-6">
-          <div className="rounded-4xl border border-white/10 bg-black/20 px-5 py-4 text-sm text-white/80">
+          <div className="rounded-md border border-[#3a3d3f] bg-[#181a1d] px-5 py-4 text-sm text-[#e5e1d8]">
             {showWindowFeedback}
           </div>
         </section>
@@ -211,7 +235,7 @@ export function DashboardShell({
 
       {controlFeedback ? (
         <section className="mt-6">
-          <div className="rounded-4xl border border-white/10 bg-black/20 px-5 py-4 text-sm text-white/80">
+          <div className="rounded-md border border-[#3a3d3f] bg-[#181a1d] px-5 py-4 text-sm text-[#e5e1d8]">
             {controlFeedback}
           </div>
         </section>
@@ -233,7 +257,7 @@ export function DashboardShell({
           {!openAiStatus.configured ? (
             <StatusNotice
               title="Demo Mode Active"
-              body="No OPENAI_API_KEY environment variable is active right now, so the app is using the demo loop fallback instead of real Sora generation."
+              body="No account or environment OpenAI API key is active right now, so the app is using the demo loop fallback instead of real Sora generation."
             />
           ) : null}
         </section>
@@ -254,17 +278,17 @@ export function DashboardShell({
                 assetTitle={playback?.nextAsset?.title ?? "No queued remix"}
                 prompt={
                   playback?.nextAsset?.promptText ??
-                  "When a safe crowd remix completes, it will preload here and crossfade into the show."
+                  "When a safe crowd remix completes, it will preload here and wait for a manual switch or deck-change auto trigger."
                 }
-                status={playback?.nextAsset ? "ready to fade" : "open slot"}
+                status={playback?.nextAsset ? "ready to switch" : "open slot"}
               />
             </div>
           </div>
 
           <div className="panel overflow-hidden">
-            <div className="border-b border-white/10 px-6 py-5">
-              <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">Live Monitor</p>
-              <p className="mt-3 text-sm text-white/68">
+            <div className="border-b border-[#34383c] px-6 py-5">
+              <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#8f9499]">Live Monitor</p>
+              <p className="mt-3 text-sm text-[#aaa79f]">
                 Keep an eye on the show here while you test controls. This avoids the extra-tab weirdness from the in-app browser.
               </p>
             </div>
@@ -272,27 +296,27 @@ export function DashboardShell({
             <div className="aspect-video bg-black">
               <iframe
                 key={`${playback?.currentAsset?.id ?? "holding"}-${playback?.nextAsset?.id ?? "none"}`}
-                src={showLink}
+                src={cleanShowLink}
                 title="Live show monitor"
                 className="h-full w-full border-0"
-                allow="autoplay; fullscreen"
+                allow="autoplay; fullscreen; microphone"
               />
             </div>
           </div>
 
-          <div className="panel p-6">
+          <div className="panel p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">Live Controls</p>
-                <p className="mt-3 text-sm text-white/68">
-                  Keep the floor safe, pause automation if needed, and trigger a backup remix when the queue gets weird.
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#8f9499]">Live Controls</p>
+                <p className="mt-3 text-sm text-[#aaa79f]">
+                  Manual visual switching, crowd selection, and fallback render controls.
                 </p>
               </div>
 
               {canStartSession ? (
                 <button
                   onClick={() => void runControlAction("start-session")}
-                  className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:opacity-90"
+                  className="rounded-md bg-[#baff39] px-5 py-3 text-sm font-semibold text-[#151515] transition hover:brightness-110"
                 >
                   {workingAction === "start-session"
                     ? "Starting..."
@@ -310,10 +334,16 @@ export function DashboardShell({
                 onClick={() => void runControlAction(session.autoSelectEnabled ? "pause-selection" : "resume-selection")}
               />
               <ControlButton
-                active={workingAction === "skip-next"}
+                active={workingAction === "cut-next"}
                 disabled={!playback?.nextAsset}
-                label="Skip To Next"
-                onClick={() => void runControlAction("skip-next")}
+                label="Hard Cut Next"
+                onClick={() => void runControlAction("cut-next")}
+              />
+              <ControlButton
+                active={workingAction === "fade-next"}
+                disabled={!playback?.nextAsset}
+                label="Fade Next"
+                onClick={() => void runControlAction("fade-next")}
               />
               <ControlButton
                 active={workingAction === "fallback-remix"}
@@ -323,11 +353,11 @@ export function DashboardShell({
               <ControlButton active={workingAction === "stop-session"} label="Stop Session" onClick={() => void runControlAction("stop-session")} />
             </div>
 
-            <p className="mt-4 text-sm text-white/62">
+            <p className="mt-4 text-sm text-[#aaa79f]">
               {playback?.nextAsset
-                ? "A ready next loop is loaded, so Skip To Next can cut over immediately."
+                ? `A ready next loop is loaded. Auto mode is ${audioReactive.sharedState.switchMode === "auto" ? "listening for the next deck change" : "holding for a manual switch"}.`
                 : snapshot.queueHealth.waitingOnRender
-                  ? "Skip To Next will unlock after the current render finishes and loads as the next loop."
+                  ? "Visual switching will unlock after the current render finishes and loads as the next loop."
                   : "No next loop is ready yet. Queue a fallback remix or wait for a crowd remix to finish."}
             </p>
           </div>
@@ -385,16 +415,23 @@ export function DashboardShell({
         </div>
 
         <div className="space-y-6">
+          <AudioReactiveControlsPanel controller={audioReactive} />
+
           <div className="panel p-6">
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">OpenAI Environment</p>
+            <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">OpenAI Connection</p>
             <p className="mt-4 text-sm leading-7 text-white/72">
-              {openAiStatus.source === "env"
-                ? `Using OPENAI_API_KEY from the local environment${openAiStatus.last4 ? ` ending in ${openAiStatus.last4}` : ""} for moderation and Sora calls.`
-                : "No OPENAI_API_KEY environment variable is configured yet, so the app is running in demo fallback mode."}
+              {openAiStatus.source === "account"
+                ? `Using the account OpenAI key${openAiStatus.last4 ? ` ending in ${openAiStatus.last4}` : ""} for moderation and Sora calls.`
+                : openAiStatus.source === "env"
+                  ? `Using OPENAI_API_KEY from the local environment${openAiStatus.last4 ? ` ending in ${openAiStatus.last4}` : ""} for moderation and Sora calls.`
+                  : "No OpenAI API key is connected yet, so the app is running in demo fallback mode."}
             </p>
             <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 px-4 py-4 text-sm leading-7 text-white/72">
-              Set `OPENAI_API_KEY` in `.env` or your shell before starting the app. The dashboard no longer stores or edits API keys.
+              Manage account keys from Profile. Environment keys still work as a fallback for local development.
             </div>
+            <Link href="/profile" className="mt-4 inline-flex rounded-md border border-[#42464a] bg-[#232529] px-4 py-2 text-sm text-[#e5e1d8] transition hover:border-[#baff39]">
+              Open Profile
+            </Link>
           </div>
 
           <div className="panel p-6">
@@ -408,7 +445,7 @@ export function DashboardShell({
                 <p className="mt-2 text-sm text-white/60">Open the live screen in another tab/window while you stay on the dashboard.</p>
               </button>
               <a
-                href={showLink}
+                href={cleanShowLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block rounded-4xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-plasma/40"
@@ -425,10 +462,10 @@ export function DashboardShell({
               </button>
               <div className="rounded-4xl border border-white/10 bg-black/20 p-4">
                 <p className="text-sm font-semibold text-white">Show URL</p>
-                <p className="mt-2 break-all font-mono text-xs text-white/60">{showUrlDisplay || showLink}</p>
+                <p className="mt-2 break-all font-mono text-xs text-white/60">{showUrlDisplay || cleanShowLink}</p>
               </div>
               <LinkCard label="Audience Remix Form" href={publicLink} />
-              <LinkCard label="Fullscreen Projection View" href={showLink} />
+              <LinkCard label="Fullscreen Projection View" href={cleanShowLink} />
             </div>
           </div>
 
@@ -441,7 +478,7 @@ export function DashboardShell({
                 session.renderJobs.map((job: any) => (
                   <div key={job.id} className="rounded-4xl border border-white/10 bg-black/20 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">{job.mode === "seed" ? "Seed Render" : "Crowd Remix"}</p>
+                      <p className="text-sm font-semibold text-white">{job.mode === "seed" ? "Seed Render" : "Dream Sequence Remix"}</p>
                       <span className="text-xs uppercase tracking-[0.24em] text-white/40">{job.status}</span>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-white/68">{job.promptText}</p>
@@ -455,9 +492,23 @@ export function DashboardShell({
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">Session DNA</p>
             <div className="mt-5 space-y-4 text-sm leading-7 text-white/74">
               <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">{session.creativeBible}</div>
-              <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Allowed motifs: {session.allowedMotifs}</div>
+              {session.allowedMotifs ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Allowed motifs: {session.allowedMotifs}</div>
+              ) : null}
               <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Blocked themes: {session.bannedTerms}</div>
               <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Motion rules: {session.motionRules}</div>
+              {session.audiencePromptGuide ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Audience guide: {session.audiencePromptGuide}</div>
+              ) : null}
+              {session.negativePrompt ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Negative prompt: {session.negativePrompt}</div>
+              ) : null}
+              {session.systemPrompt ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">System prompt: {session.systemPrompt}</div>
+              ) : null}
+              {session.automoderationPrompt ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Automoderation: {session.automoderationPrompt}</div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -469,10 +520,10 @@ export function DashboardShell({
 function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <div className="panel p-5">
-      <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-white/42">{label}</p>
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#8f9499]">{label}</p>
       <div className="mt-4 flex items-end justify-between gap-3">
         <p className="text-3xl font-semibold text-white">{value}</p>
-        <p className="text-xs uppercase tracking-[0.2em] text-white/35">{hint}</p>
+        <p className="text-xs uppercase tracking-[0.12em] text-[#777c82]">{hint}</p>
       </div>
     </div>
   );
@@ -490,11 +541,11 @@ function PlaybackCard({
   status: string;
 }) {
   return (
-    <div className="border-b border-white/10 p-6 last:border-b-0 lg:border-b-0 lg:border-r last:lg:border-r-0">
-      <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/45">{title}</p>
+    <div className="border-b border-[#34383c] p-6 last:border-b-0 lg:border-b-0 lg:border-r last:lg:border-r-0">
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-[#8f9499]">{title}</p>
       <p className="mt-4 text-2xl font-semibold text-white">{assetTitle}</p>
-      <p className="mt-3 text-xs uppercase tracking-[0.24em] text-plasma">{status}</p>
-      <p className="mt-5 text-sm leading-7 text-white/68">{prompt}</p>
+      <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#baff39]">{status}</p>
+      <p className="mt-5 text-sm leading-7 text-[#aaa79f]">{prompt}</p>
     </div>
   );
 }
@@ -514,7 +565,7 @@ function ControlButton({
     <button
       onClick={onClick}
       disabled={disabled || active}
-      className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/82 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-45"
+      className="rounded-md border border-[#42464a] bg-[#232529] px-4 py-3 text-sm text-[#e5e1d8] transition hover:border-[#baff39] disabled:cursor-not-allowed disabled:opacity-45"
     >
       {active ? "Working..." : label}
     </button>
@@ -523,27 +574,27 @@ function ControlButton({
 
 function LinkCard({ label, href }: { label: string; href: string }) {
   return (
-    <Link href={href} className="block rounded-4xl border border-white/10 bg-black/20 p-4 transition hover:border-plasma/40">
+    <Link href={href} className="block rounded-md border border-[#34383c] bg-[#111315] p-4 transition hover:border-[#baff39]">
       <p className="text-sm font-semibold text-white">{label}</p>
-      <p className="mt-2 text-sm text-white/60">{href}</p>
+      <p className="mt-2 text-sm text-[#aaa79f]">{href}</p>
     </Link>
   );
 }
 
 function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-4xl border border-dashed border-white/14 bg-black/15 p-5">
+    <div className="rounded-md border border-dashed border-[#42464a] bg-[#111315] p-5">
       <p className="text-base font-semibold text-white">{title}</p>
-      <p className="mt-3 text-sm leading-7 text-white/65">{body}</p>
+      <p className="mt-3 text-sm leading-7 text-[#aaa79f]">{body}</p>
     </div>
   );
 }
 
 function StatusNotice({ title, body }: { title: string; body: string }) {
   return (
-    <div className="panel border border-amber-300/20 bg-amber-300/8 p-5">
-      <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-amber-200/90">{title}</p>
-      <p className="mt-3 text-sm leading-7 text-white/78">{body}</p>
+    <div className="panel border border-[#ffb86c]/30 bg-[#2a2018] p-5">
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#ffb86c]">{title}</p>
+      <p className="mt-3 text-sm leading-7 text-[#e5e1d8]">{body}</p>
     </div>
   );
 }

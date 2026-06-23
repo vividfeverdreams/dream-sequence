@@ -1,13 +1,22 @@
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth";
+import { getPrimarySessionForUser } from "@/lib/session-service";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const user = await getCurrentUser();
+  const latestSession = user ? await getPrimarySessionForUser(user.id) : null;
+  const continueHref = user ? (latestSession ? "/dashboard" : "/sessions") : "/login?next=/sessions";
+  const startNewHref = user ? "/sessions/new" : "/login?next=/sessions/new";
+
   return (
     <main className="min-h-screen bg-ink bg-aurora">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-between px-6 py-8 lg:px-10">
         <header className="flex items-center justify-between">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/55">
-              Crowd Remix
+              Dream Sequence
             </p>
             <p className="mt-2 max-w-sm text-sm text-white/70">
               Live crowd-controlled Sora remixes for projector and LED wall shows.
@@ -15,10 +24,10 @@ export default function HomePage() {
           </div>
 
           <Link
-            href="/login"
+            href={user ? "/profile" : "/login?next=/profile"}
             className="rounded-full border border-white/15 bg-white/8 px-5 py-2 text-sm font-medium text-white transition hover:bg-white/14"
           >
-            DJ Login
+            {user ? "Profile" : "DJ Login"}
           </Link>
         </header>
 
@@ -32,7 +41,7 @@ export default function HomePage() {
                 Keep the visual loop alive while the crowd bends the universe.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-white/72 md:text-xl">
-                Crowd Remix ingests prompts from SMS and QR form submissions, scores them for
+                Dream Sequence ingests prompts from SMS and QR form submissions, scores them for
                 safety and vibe match, remixes the active Sora loop, and crossfades into the next
                 approved visual as soon as it is ready.
               </p>
@@ -40,16 +49,16 @@ export default function HomePage() {
 
             <div className="flex flex-wrap gap-3">
               <Link
-                href="/dashboard"
+                href={continueHref}
                 className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90"
               >
-                Open Dashboard
+                Continue Session
               </Link>
               <Link
-                href="/login"
+                href={startNewHref}
                 className="rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
               >
-                Configure a Show
+                Start New Session
               </Link>
             </div>
           </div>

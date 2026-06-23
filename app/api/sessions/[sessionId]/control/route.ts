@@ -54,7 +54,7 @@ export async function POST(request: Request, { params }: ControlRouteProps) {
       await attemptAutomatedSelection(sessionId);
       break;
     case "skip-next":
-      await forceTransitionToNext(sessionId, user.id);
+      await forceTransitionToNext(sessionId, user.id, parsed.data.transitionSeconds ?? 0);
       await attemptAutomatedSelection(sessionId);
       break;
     case "fallback-remix":

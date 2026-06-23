@@ -1,6 +1,6 @@
-# Crowd Remix
+# Dream Sequence
 
-Crowd Remix is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused Sora remix prompt, and crossfades into the next completed loop when it is ready.
+Dream Sequence is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused Sora remix prompt, and holds the next completed loop for a manual visual switch or an auto switch detected from the Rekordbox/DJ audio feed.
 
 ## What This MVP Includes
 
@@ -24,7 +24,8 @@ Crowd Remix is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visu
 - OpenAI text scoring for moderation/ranking/prompt compilation
 - OpenAI Sora seed/remix orchestration
 - SSE-driven realtime updates for the dashboard and show screen
-- Double-buffer video crossfade on the fullscreen playback route
+- Double-buffer visual switching with manual hard cuts/fades or auto switching from a Rekordbox/DJ audio feed
+- Browser Web Audio bridge for Rekordbox, line inputs, audio interfaces, BlackHole, and Loopback-style virtual devices
 - Local file storage for downloaded MP4 assets
 - Demo-mode fallback if `OPENAI_API_KEY` is missing
 
@@ -65,7 +66,7 @@ npm run dev
 The seed script creates:
 
 - Email: `dj@example.com`
-- Password: `crowdremix-demo`
+- Password: `dreamsequence-demo`
 
 You can override those values with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`.
 
@@ -128,7 +129,8 @@ If `OPENAI_API_KEY` is absent, the app uses a demo video URL so the playback and
 5. If no render is active and no next asset is waiting, the best approved prompt is selected.
 6. The app starts a seed render or remix render with Sora.
 7. Once the render is completed, the output becomes the next queued loop.
-8. The fullscreen show view crossfades and then promotes that asset to live.
+8. The fullscreen show view holds the queued asset until the DJ manually cuts/fades or auto mode detects a song change from the selected Rekordbox/DJ audio feed.
+9. The show view animates the hard cut or fade, then promotes that asset to live.
 
 ## Notes About Infrastructure Choices
 

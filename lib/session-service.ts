@@ -1,18 +1,24 @@
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
-import { createSessionCode, normalizePromptText } from "@/lib/utils";
+import { createSessionCode, normalizePromptText, slugifyCode } from "@/lib/utils";
 import { queueAutomatedRender } from "@/lib/submission-pipeline";
 
 type SessionInput = {
   name: string;
   artistName: string;
   trackName: string;
+  audienceSlug?: string;
   creativeBible: string;
   allowedMotifs: string;
   bannedTerms: string;
   colorPalette: string;
   motionRules: string;
   basePrompt: string;
+  systemPrompt: string;
+  automoderationPrompt: string;
+  audiencePromptGuide: string;
+  remixPromptTemplate: string;
+  negativePrompt: string;
   imageReferenceUrl?: string;
   smsNumber?: string;
   venueSafeMode: boolean;
@@ -20,7 +26,9 @@ type SessionInput = {
 };
 
 export async function createDjSession(userId: string, input: SessionInput) {
-  const code = createSessionCode(`${input.artistName}-${input.trackName}`);
+  const code = input.audienceSlug
+    ? slugifyCode(input.audienceSlug, 48)
+    : createSessionCode(`${input.artistName}-${input.trackName}`);
 
   const session = await db.dJSession.create({
     data: {
@@ -35,6 +43,11 @@ export async function createDjSession(userId: string, input: SessionInput) {
       colorPalette: input.colorPalette,
       motionRules: input.motionRules,
       basePrompt: normalizePromptText(input.basePrompt),
+      systemPrompt: normalizePromptText(input.systemPrompt),
+      automoderationPrompt: normalizePromptText(input.automoderationPrompt),
+      audiencePromptGuide: normalizePromptText(input.audiencePromptGuide),
+      remixPromptTemplate: normalizePromptText(input.remixPromptTemplate),
+      negativePrompt: normalizePromptText(input.negativePrompt),
       imageReferenceUrl: input.imageReferenceUrl || null,
       smsNumber: input.smsNumber || null,
       venueSafeMode: input.venueSafeMode,
@@ -173,7 +186,7 @@ export async function setSelectionPause(sessionId: string, userId: string, pause
   return session;
 }
 
-export async function forceTransitionToNext(sessionId: string, userId: string) {
+export async function forceTransitionToNext(sessionId: string, userId: string, transitionSeconds = 0) {
   const session = await db.dJSession.findFirst({
     where: {
       id: sessionId,
@@ -188,7 +201,24 @@ export async function forceTransitionToNext(sessionId: string, userId: string) {
     return null;
   }
 
-  return completePlaybackTransition(sessionId);
+  await db.playbackState.update({
+    where: {
+      id: session.playbackState.id
+    },
+    data: {
+      status: "transitioning",
+      crossfadeSeconds: Math.max(0, Math.min(8, transitionSeconds))
+    }
+  });
+
+  await recordAuditEvent({
+    type: "playback.transition_requested",
+    summary: transitionSeconds > 0 ? "Requested a fade to the queued visual asset" : "Requested a hard cut to the queued visual asset",
+    sessionId,
+    userId
+  });
+
+  return true;
 }
 
 export async function completePlaybackTransition(sessionId: string) {
@@ -238,7 +268,7 @@ export async function completePlaybackTransition(sessionId: string) {
 
   await recordAuditEvent({
     type: "playback.transitioned",
-    summary: "Crossfaded to the queued visual asset",
+    summary: "Switched to the queued visual asset",
     sessionId
   });
 

@@ -3,6 +3,7 @@ import { assessSubmission } from "@/lib/ai-assessment";
 import { checkSubmissionRateLimit } from "@/lib/rate-limit";
 import { recordAuditEvent } from "@/lib/audit";
 import { getEffectiveOpenAiApiKeyForUser } from "@/lib/openai-key-store";
+import { defaultNegativePrompt } from "@/lib/session-defaults";
 import { hashValue, normalizePromptText } from "@/lib/utils";
 import { reconcileRenderJob, startVideoRender } from "@/lib/rendering";
 
@@ -252,14 +253,15 @@ export async function queueAutomatedRender(
     Boolean(sourceAsset?.sourceVideoId) &&
     String(sourceAsset?.sourceVideoId).startsWith("video_");
   const mode = canEditExistingVideo ? "remix" : "seed";
+  const renderPrompt = addNegativeConstraints(promptText, String(session.negativePrompt || defaultNegativePrompt));
 
   const outputAsset = await db.visualAsset.create({
     data: {
       sessionId,
       sourceSubmissionId: submissionId,
       kind: mode,
-      title: mode === "seed" ? "Seed Loop" : "Crowd Remix",
-      promptText,
+      title: mode === "seed" ? "Seed Loop" : "Dream Sequence Remix",
+      promptText: renderPrompt,
       status: "processing"
     }
   });
@@ -272,7 +274,7 @@ export async function queueAutomatedRender(
       outputAssetId: outputAsset.id,
       mode,
       status: "queued",
-      promptText
+      promptText: renderPrompt
     }
   });
 
@@ -285,7 +287,7 @@ export async function queueAutomatedRender(
   try {
     started = await startVideoRender({
       mode,
-      prompt: promptText,
+      prompt: renderPrompt,
       sourceVideoId: sourceAsset?.sourceVideoId,
       imageReferenceUrl: session.imageReferenceUrl,
       openAiApiKey
@@ -383,4 +385,18 @@ export async function reconcilePendingRenderJobs(sessionId: string) {
   }
 
   return jobs.length;
+}
+
+function addNegativeConstraints(promptText: string, negativePrompt: string) {
+  const normalizedNegativePrompt = normalizePromptText(negativePrompt);
+
+  if (!normalizedNegativePrompt) {
+    return promptText;
+  }
+
+  if (promptText.toLowerCase().includes(normalizedNegativePrompt.toLowerCase())) {
+    return promptText;
+  }
+
+  return normalizePromptText(`${promptText} Avoid: ${normalizedNegativePrompt}.`);
 }
