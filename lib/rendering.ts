@@ -1,7 +1,8 @@
+import { readFile } from "fs/promises";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getEffectiveOpenAiApiKeyForUser } from "@/lib/openai-key-store";
-import { persistVideoAsset, getDemoLoopUrl, readVideoAsset } from "@/lib/storage";
+import { persistVideoAsset, getDemoLoopUrl, getStoredVideoPath } from "@/lib/storage";
 
 type StartRenderInput = {
   mode: "seed" | "remix";
@@ -293,7 +294,8 @@ async function markRenderJobReady(
 }
 
 export async function readStoredAsset(assetId: string) {
-  return readVideoAsset(assetId);
+  const filePath = getStoredVideoPath(assetId);
+  return readFile(filePath);
 }
 
 async function callOpenAiVideoApi<T>(url: string, apiKey: string, init?: RequestInit) {

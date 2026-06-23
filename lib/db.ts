@@ -1,9 +1,7 @@
 import { randomUUID } from "crypto";
 import fs from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
-import { get as getBlob, put as putBlob } from "@vercel/blob";
 import { hashPassword } from "@/lib/auth-core";
 import { env } from "@/lib/env";
 import {
@@ -36,16 +34,26 @@ declare global {
   var crowdRemixSqlite: DatabaseSync | undefined;
 }
 
-const blobPersistenceEnabled =
-  process.env.NODE_ENV === "production" && Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-const databasePath = resolveDatabasePath(env.databaseUrl);
-const databaseBlobPath = process.env.CROWD_REMIX_DATABASE_BLOB_PATH ?? "state/crowd-remix.sqlite";
+const sqlite =
+  global.crowdRemixSqlite ??
+  new DatabaseSync(resolveDatabasePath(env.databaseUrl));
 
-let sqlite = global.crowdRemixSqlite ?? new DatabaseSync(databasePath);
-let persistenceQueue = Promise.resolve();
-let transactionDepth = 0;
-
-prepareDatabase();
+sqlite.exec("PRAGMA foreign_keys = ON");
+ensureSchema();
+ensureColumn("User", "avatarUrl", "TEXT");
+ensureColumn("User", "openAiApiKeyEncrypted", "TEXT");
+ensureColumn("User", "openAiApiKeyLast4", "TEXT");
+const addedEmailVerifiedColumn = ensureColumn("User", "emailVerifiedAt", "DATETIME");
+ensureColumn("DJSession", "systemPrompt", "TEXT");
+ensureColumn("DJSession", "automoderationPrompt", "TEXT");
+ensureColumn("DJSession", "audiencePromptGuide", "TEXT");
+ensureColumn("DJSession", "remixPromptTemplate", "TEXT");
+ensureColumn("DJSession", "negativePrompt", "TEXT");
+ensureEmailVerificationTokenTable();
+if (addedEmailVerifiedColumn) {
+  backfillExistingUsersAsVerified();
+}
+ensureDemoData();
 
 if (process.env.NODE_ENV !== "production") {
   global.crowdRemixSqlite = sqlite;
@@ -57,95 +65,12 @@ const booleanColumns = {
 } as const;
 
 function resolveDatabasePath(databaseUrl: string) {
-  if (blobPersistenceEnabled) {
-    return path.join(process.env.TMPDIR ?? "/tmp", "crowd-remix.sqlite");
-  }
-
   if (!databaseUrl.startsWith("file:")) {
     throw new Error(`Unsupported DATABASE_URL: ${databaseUrl}`);
   }
 
   const rawPath = databaseUrl.slice("file:".length);
   return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
-}
-
-function prepareDatabase() {
-  sqlite.exec("PRAGMA foreign_keys = ON");
-  ensureSchema();
-  ensureColumn("User", "avatarUrl", "TEXT");
-  ensureColumn("User", "openAiApiKeyEncrypted", "TEXT");
-  ensureColumn("User", "openAiApiKeyLast4", "TEXT");
-  const addedEmailVerifiedColumn = ensureColumn("User", "emailVerifiedAt", "DATETIME");
-  ensureColumn("DJSession", "systemPrompt", "TEXT");
-  ensureColumn("DJSession", "automoderationPrompt", "TEXT");
-  ensureColumn("DJSession", "audiencePromptGuide", "TEXT");
-  ensureColumn("DJSession", "remixPromptTemplate", "TEXT");
-  ensureColumn("DJSession", "negativePrompt", "TEXT");
-  ensureEmailVerificationTokenTable();
-
-  if (addedEmailVerifiedColumn) {
-    backfillExistingUsersAsVerified();
-  }
-
-  ensureDemoData();
-}
-
-async function streamToBuffer(stream: ReadableStream<Uint8Array>) {
-  return Buffer.from(await new Response(stream).arrayBuffer());
-}
-
-async function syncDatabaseFromBlob() {
-  const remote = await getBlob(databaseBlobPath, {
-    access: "private",
-    useCache: false
-  });
-
-  if (!remote || remote.statusCode !== 200 || !remote.stream) {
-    return;
-  }
-
-  const buffer = await streamToBuffer(remote.stream);
-  sqlite.close();
-  await mkdir(path.dirname(databasePath), {
-    recursive: true
-  });
-  await writeFile(databasePath, buffer);
-  sqlite = new DatabaseSync(databasePath);
-  prepareDatabase();
-}
-
-async function syncDatabaseToBlob() {
-  const buffer = await readFile(databasePath);
-
-  await putBlob(databaseBlobPath, buffer, {
-    access: "private",
-    allowOverwrite: true,
-    contentType: "application/vnd.sqlite3"
-  });
-}
-
-async function withPersistentDatabase<T>(mode: "read" | "write", operation: () => Promise<T> | T) {
-  if (!blobPersistenceEnabled || transactionDepth > 0) {
-    return operation();
-  }
-
-  const run = async () => {
-    await syncDatabaseFromBlob();
-    const result = await operation();
-
-    if (mode === "write") {
-      await syncDatabaseToBlob();
-    }
-
-    return result;
-  };
-
-  const next = persistenceQueue.then(run, run);
-  persistenceQueue = next.then(
-    () => undefined,
-    () => undefined
-  );
-  return next;
 }
 
 function ensureSchema() {
@@ -1120,7 +1045,6 @@ function createDbApi(): any {
     },
     async $transaction<T>(callback: (tx: ReturnType<typeof createDbApi>) => Promise<T>) {
       sqlite.exec("BEGIN");
-      transactionDepth += 1;
 
       try {
         const tx = createDbApi();
@@ -1130,72 +1054,9 @@ function createDbApi(): any {
       } catch (error) {
         sqlite.exec("ROLLBACK");
         throw error;
-      } finally {
-        transactionDepth -= 1;
       }
     }
   };
 }
 
-const writeOperations = new Set([
-  "$transaction",
-  "user.create",
-  "user.update",
-  "emailVerificationToken.create",
-  "emailVerificationToken.update",
-  "emailVerificationToken.updateMany",
-  "dJSession.create",
-  "dJSession.update",
-  "promptSubmission.create",
-  "promptSubmission.update",
-  "moderationResult.create",
-  "rankingResult.create",
-  "visualAsset.create",
-  "visualAsset.update",
-  "renderJob.create",
-  "renderJob.update",
-  "playbackState.update",
-  "auditEvent.create"
-]);
-
-function wrapDbApiForPersistence(api: any) {
-  if (!blobPersistenceEnabled) {
-    return api;
-  }
-
-  const wrapped: Record<string, unknown> = {};
-
-  for (const [namespace, value] of Object.entries(api)) {
-    if (typeof value === "function") {
-      const mode = writeOperations.has(namespace) ? "write" : "read";
-      wrapped[namespace] = (...args: unknown[]) =>
-        withPersistentDatabase(mode, () => (value as (...input: unknown[]) => unknown)(...args));
-      continue;
-    }
-
-    if (!value || typeof value !== "object") {
-      wrapped[namespace] = value;
-      continue;
-    }
-
-    const model: Record<string, unknown> = {};
-
-    for (const [method, modelValue] of Object.entries(value)) {
-      if (typeof modelValue !== "function") {
-        model[method] = modelValue;
-        continue;
-      }
-
-      const operationName = `${namespace}.${method}`;
-      const mode = writeOperations.has(operationName) ? "write" : "read";
-      model[method] = (...args: unknown[]) =>
-        withPersistentDatabase(mode, () => (modelValue as (...input: unknown[]) => unknown)(...args));
-    }
-
-    wrapped[namespace] = model;
-  }
-
-  return wrapped;
-}
-
-export const db: any = wrapDbApiForPersistence(createDbApi());
+export const db: any = createDbApi();
