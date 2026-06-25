@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Crowd Remix",
+  title: "DREAM SEQUENCE",
   description: "Live AI visuals for DJs with crowd-driven remixing."
 };
 

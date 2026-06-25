@@ -7,7 +7,7 @@ export default function HomePage() {
         <header className="flex items-center justify-between">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-white/55">
-              Crowd Remix
+              DREAM SEQUENCE
             </p>
             <p className="mt-2 max-w-sm text-sm text-white/70">
               Live crowd-controlled Sora remixes for projector and LED wall shows.
@@ -32,7 +32,7 @@ export default function HomePage() {
                 Keep the visual loop alive while the crowd bends the universe.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-white/72 md:text-xl">
-                Crowd Remix ingests prompts from SMS and QR form submissions, scores them for
+                DREAM SEQUENCE ingests prompts from SMS and QR form submissions, scores them for
                 safety and vibe match, remixes the active Sora loop, and crossfades into the next
                 approved visual as soon as it is ready.
               </p>

@@ -1,6 +1,6 @@
-# Crowd Remix
+# DREAM SEQUENCE
 
-Crowd Remix is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused Sora remix prompt, and crossfades into the next completed loop when it is ready.
+DREAM SEQUENCE is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused Sora remix prompt, and crossfades into the next completed loop when it is ready.
 
 ## What This MVP Includes
 

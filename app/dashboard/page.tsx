@@ -17,7 +17,7 @@ export default async function DashboardPage() {
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-8 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">Crowd Remix</p>
+            <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DREAM SEQUENCE</p>
             <h1 className="mt-4 text-4xl font-semibold text-white">Set up your first live session.</h1>
             <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">
               Create the visual DNA once, then let SMS and QR prompts remix the show inside those boundaries.
