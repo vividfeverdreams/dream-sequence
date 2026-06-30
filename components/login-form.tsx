@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 
 export function LoginForm() {
   const [email, setEmail] = useState("dj@example.com");
-  const [password, setPassword] = useState("crowdremix-demo");
+  const [password, setPassword] = useState("dreamsequence-demo");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -68,7 +68,7 @@ export function LoginForm() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition focus:border-plasma"
-            placeholder="crowdremix-demo"
+            placeholder="dreamsequence-demo"
             type="password"
             autoComplete="current-password"
           />

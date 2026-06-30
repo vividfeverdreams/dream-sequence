@@ -10,7 +10,7 @@ export const env = {
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
   twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? "",
   twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER ?? "",
-  sessionCookieName: "crowd-remix-session"
+  sessionCookieName: "dream-sequence-session"
 } as const;
 
 export function hasOpenAiCredentials() {

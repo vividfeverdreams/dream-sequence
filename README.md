@@ -65,7 +65,7 @@ npm run dev
 The seed script creates:
 
 - Email: `dj@example.com`
-- Password: `crowdremix-demo`
+- Password: `dreamsequence-demo`
 
 You can override those values with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`.
 

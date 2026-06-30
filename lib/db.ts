@@ -22,11 +22,11 @@ type SqlInputValue = string | number | bigint | Uint8Array | null;
 
 declare global {
   // eslint-disable-next-line no-var
-  var crowdRemixSqlite: DatabaseSync | undefined;
+  var dreamSequenceSqlite: DatabaseSync | undefined;
 }
 
 const sqlite =
-  global.crowdRemixSqlite ??
+  global.dreamSequenceSqlite ??
   new DatabaseSync(resolveDatabasePath(env.databaseUrl));
 
 sqlite.exec("PRAGMA foreign_keys = ON");
@@ -34,7 +34,7 @@ ensureColumn("User", "openAiApiKeyEncrypted", 'TEXT');
 ensureColumn("User", "openAiApiKeyLast4", 'TEXT');
 
 if (process.env.NODE_ENV !== "production") {
-  global.crowdRemixSqlite = sqlite;
+  global.dreamSequenceSqlite = sqlite;
 }
 
 const booleanColumns = {

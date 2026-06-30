@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
-  const password = process.env.SEED_DJ_PASSWORD ?? "crowdremix-demo";
+  const password = process.env.SEED_DJ_PASSWORD ?? "dreamsequence-demo";
 
   const user = await prisma.user.upsert({
     where: {

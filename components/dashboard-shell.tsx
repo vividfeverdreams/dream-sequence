@@ -254,7 +254,7 @@ export function DashboardShell({
                 assetTitle={playback?.nextAsset?.title ?? "No queued remix"}
                 prompt={
                   playback?.nextAsset?.promptText ??
-                  "When a safe crowd remix completes, it will preload here and crossfade into the show."
+                  "When a safe crowd render completes, it will preload here and crossfade into the show."
                 }
                 status={playback?.nextAsset ? "ready to fade" : "open slot"}
               />
@@ -328,7 +328,7 @@ export function DashboardShell({
                 ? "A ready next loop is loaded, so Skip To Next can cut over immediately."
                 : snapshot.queueHealth.waitingOnRender
                   ? "Skip To Next will unlock after the current render finishes and loads as the next loop."
-                  : "No next loop is ready yet. Queue a fallback remix or wait for a crowd remix to finish."}
+                  : "No next loop is ready yet. Queue a fallback remix or wait for a crowd render to finish."}
             </p>
           </div>
 
@@ -441,7 +441,7 @@ export function DashboardShell({
                 session.renderJobs.map((job: any) => (
                   <div key={job.id} className="rounded-4xl border border-white/10 bg-black/20 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">{job.mode === "seed" ? "Seed Render" : "Crowd Remix"}</p>
+                      <p className="text-sm font-semibold text-white">{job.mode === "seed" ? "Seed Render" : "DREAM SEQUENCE"}</p>
                       <span className="text-xs uppercase tracking-[0.24em] text-white/40">{job.status}</span>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-white/68">{job.promptText}</p>
