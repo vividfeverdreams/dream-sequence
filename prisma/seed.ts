@@ -1,35 +1,34 @@
-import { PrismaClient } from "@prisma/client";
+import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth-core";
 import { createSessionCode } from "@/lib/utils";
-
-const prisma = new PrismaClient();
 
 async function main() {
   const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
   const password = process.env.SEED_DJ_PASSWORD ?? "dreamsequence-demo";
 
-  const user = await prisma.user.upsert({
-    where: {
-      email
-    },
-    update: {
-      displayName: "Demo DJ"
-    },
-    create: {
-      email,
-      passwordHash: hashPassword(password),
-      displayName: "Demo DJ"
-    }
-  });
+  const existing = await db.user.findUnique({ where: { email } });
 
-  const existingSession = await prisma.dJSession.findFirst({
+  const user = existing
+    ? await db.user.update({
+        where: { email },
+        data: { displayName: "Demo DJ" }
+      })
+    : await db.user.create({
+        data: {
+          email,
+          passwordHash: hashPassword(password),
+          displayName: "Demo DJ"
+        }
+      });
+
+  const existingSession = await db.dJSession.findFirst({
     where: {
       userId: user.id
     }
   });
 
   if (!existingSession) {
-    await prisma.dJSession.create({
+    await db.dJSession.create({
       data: {
         userId: user.id,
         code: createSessionCode("neon-echo"),
@@ -60,11 +59,7 @@ async function main() {
   console.log(`Seeded password: ${password}`);
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

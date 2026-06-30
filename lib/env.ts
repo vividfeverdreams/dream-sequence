@@ -1,4 +1,4 @@
-const defaultDatabasePath = "file:./prisma/dev.db";
+const defaultDatabasePath = "file:./dev.db";
 
 export const env = {
   appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",

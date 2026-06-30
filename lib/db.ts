@@ -48,7 +48,13 @@ function resolveDatabasePath(databaseUrl: string) {
   }
 
   const rawPath = databaseUrl.slice("file:".length);
-  return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+  if (path.isAbsolute(rawPath)) {
+    return rawPath;
+  }
+
+  // Prisma resolves relative SQLite paths against the schema directory (./prisma),
+  // so mirror that here to ensure the app and `prisma migrate` open the same file.
+  return path.resolve(process.cwd(), "prisma", rawPath);
 }
 
 function ensureColumn(table: string, column: string, typeDefinition: string) {
@@ -487,6 +493,18 @@ function createDbApi(): any {
         });
 
         return applySelect(getUser(args.where), args.select);
+      },
+      async create(args: { data: Record<string, unknown>; select?: Record<string, boolean> }) {
+        const id = randomUUID();
+
+        insertRow("User", {
+          id,
+          email: args.data.email,
+          passwordHash: args.data.passwordHash,
+          displayName: args.data.displayName
+        });
+
+        return applySelect(getUser({ id }), args.select);
       }
     },
     dJSession: {
