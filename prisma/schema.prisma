@@ -1,11 +1,14 @@
 generator client {
-  provider   = "prisma-client-js"
-  engineType = "client"
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["dream_sequence"]
 }
 
 model User {
@@ -17,6 +20,8 @@ model User {
   updatedAt    DateTime     @updatedAt
   sessions     DJSession[]
   auditEvents  AuditEvent[]
+
+  @@schema("dream_sequence")
 }
 
 model DJSession {
@@ -49,6 +54,7 @@ model DJSession {
   auditEvents       AuditEvent[]
 
   @@index([userId, createdAt])
+  @@schema("dream_sequence")
 }
 
 model PromptSubmission {
@@ -73,6 +79,7 @@ model PromptSubmission {
 
   @@index([sessionId, createdAt])
   @@index([sessionId, status])
+  @@schema("dream_sequence")
 }
 
 model ModerationResult {
@@ -85,6 +92,8 @@ model ModerationResult {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   submission   PromptSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@schema("dream_sequence")
 }
 
 model RankingResult {
@@ -99,6 +108,8 @@ model RankingResult {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   submission      PromptSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@schema("dream_sequence")
 }
 
 model VisualAsset {
@@ -127,6 +138,7 @@ model VisualAsset {
   fallbackInPlayback PlaybackState[]   @relation("FallbackPlaybackAsset")
 
   @@index([sessionId, createdAt])
+  @@schema("dream_sequence")
 }
 
 model RenderJob {
@@ -150,6 +162,7 @@ model RenderJob {
   outputAsset   VisualAsset?      @relation("RenderOutput", fields: [outputAssetId], references: [id], onDelete: SetNull)
 
   @@index([sessionId, status])
+  @@schema("dream_sequence")
 }
 
 model PlaybackState {
@@ -168,6 +181,8 @@ model PlaybackState {
   currentAsset     VisualAsset? @relation("CurrentPlaybackAsset", fields: [currentAssetId], references: [id], onDelete: SetNull)
   nextAsset        VisualAsset? @relation("NextPlaybackAsset", fields: [nextAssetId], references: [id], onDelete: SetNull)
   fallbackAsset    VisualAsset? @relation("FallbackPlaybackAsset", fields: [fallbackAssetId], references: [id], onDelete: SetNull)
+
+  @@schema("dream_sequence")
 }
 
 model AuditEvent {
@@ -183,4 +198,5 @@ model AuditEvent {
 
   @@index([sessionId, createdAt])
   @@index([type, createdAt])
+  @@schema("dream_sequence")
 }

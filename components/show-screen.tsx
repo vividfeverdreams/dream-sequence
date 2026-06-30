@@ -73,7 +73,7 @@ export function ShowScreen({ initialSnapshot, openAiConfigured }: ShowScreenProp
     <main className="relative min-h-screen overflow-hidden bg-black">
       {currentAssetUrl ? (
         <video
-          key={currentAsset.id}
+          key={currentAsset?.id}
           className="absolute inset-0 h-full w-full object-cover"
           src={currentAssetUrl}
           autoPlay
@@ -87,7 +87,7 @@ export function ShowScreen({ initialSnapshot, openAiConfigured }: ShowScreenProp
 
       {shouldRenderNext && nextAssetUrl ? (
         <video
-          key={nextAsset.id}
+          key={nextAsset?.id}
           ref={nextVideoRef}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[2200ms] ${
             fadeNext ? "opacity-100" : "opacity-0"

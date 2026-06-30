@@ -1,29 +1,39 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 const demoLoopUrl = process.env.DEMO_LOOP_URL ?? "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-const storageRoot = path.join(process.cwd(), "storage", "videos");
 
-export async function ensureStorageRoot() {
-  await mkdir(storageRoot, {
-    recursive: true
-  });
+const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const bucket = process.env.SUPABASE_STORAGE_BUCKET ?? "renders";
+
+export function isStorageConfigured() {
+  return Boolean(supabaseUrl && serviceRoleKey);
 }
 
 export async function persistVideoAsset(assetId: string, data: Buffer) {
-  await ensureStorageRoot();
-  const fileName = `${assetId}.mp4`;
-  const absolutePath = path.join(storageRoot, fileName);
+  if (!isStorageConfigured()) {
+    throw new Error(
+      "Supabase storage is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
 
-  await writeFile(absolutePath, data);
+  const objectPath = `${assetId}.mp4`;
+  const response = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}/${objectPath}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "video/mp4",
+      "x-upsert": "true"
+    },
+    body: new Uint8Array(data)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase storage upload failed (${response.status}): ${await response.text()}`);
+  }
 
   return {
-    storagePath: absolutePath,
-    publicUrl: `/api/assets/${assetId}`
+    storagePath: `${bucket}/${objectPath}`,
+    publicUrl: `${supabaseUrl}/storage/v1/object/public/${bucket}/${objectPath}`
   };
-}
-
-export function getStoredVideoPath(assetId: string) {
-  return path.join(storageRoot, `${assetId}.mp4`);
 }
 
 export function getDemoLoopUrl() {
