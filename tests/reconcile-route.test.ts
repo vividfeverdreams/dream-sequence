@@ -4,8 +4,13 @@ const mocks = vi.hoisted(() => ({
   findSession: vi.fn(),
   getCurrentUser: vi.fn(),
   parseRelayToken: vi.fn(),
-  reconcilePendingRenderJobs: vi.fn()
+  reconcilePendingRenderJobs: vi.fn(),
+  after: vi.fn(),
+  drainPendingTwitchEvents: vi.fn()
 }));
+
+vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: mocks.after }));
+vi.mock("@/lib/twitch", () => ({ drainPendingTwitchEvents: mocks.drainPendingTwitchEvents }));
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: mocks.getCurrentUser
@@ -43,6 +48,21 @@ describe("render reconciliation route", () => {
         status: "in_progress"
       }
     ]);
+  });
+
+  it("reconciles renders before processing the Twitch inbox in the background", async () => {
+    mocks.getCurrentUser.mockResolvedValue({ id: "owner" });
+    mocks.findSession.mockResolvedValue({ id: "session-1", audienceMode: "twitch" });
+    const response = await POST(
+      new Request("https://example.com/api/sessions/session-1/reconcile", { method: "POST" }),
+      { params: Promise.resolve({ sessionId: "session-1" }) }
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.reconcilePendingRenderJobs).toHaveBeenCalledWith("session-1");
+    expect(mocks.drainPendingTwitchEvents).not.toHaveBeenCalled();
+    expect(mocks.after).toHaveBeenCalledTimes(1);
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.drainPendingTwitchEvents).toHaveBeenCalledWith({ userId: "owner", limit: 5 });
   });
 
   it("accepts the signed live-session relay token when the login cookie is stale", async () => {

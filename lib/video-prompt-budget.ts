@@ -1,4 +1,4 @@
-export const videoProviderPromptCharacterBudget = 1_000;
+export const videoProviderPromptCharacterBudget = 3_000;
 export const assessedVideoPromptCharacterBudget = 900;
 
 type ComposeVideoPromptInput = {
@@ -12,7 +12,6 @@ type ComposeFinalProviderVideoPromptInput = {
   creativePrompt: string;
   motionRules?: string | null;
   includeArtistMotionRules: boolean;
-  venueSafeMode: boolean;
   openingFrameAttached?: boolean;
   crowdReferenceAttached?: boolean;
 };
@@ -22,11 +21,9 @@ export const providerCameraContinuityRequirement =
 export const providerArtistCameraPriorityRequirement =
   "Otherwise preserve earlier camera direction; if neither specifies camera, leave it unrestricted.";
 export const providerSeamlessLoopRequirement =
-  "Reconnect ending to opening seamlessly as a continuous loop.";
-export const providerVenueSafetyRequirement =
-  "Venue-safe: no real people/public figures, copyrighted characters, logos/readable text, explicit content/graphic violence, or hazardous imagery.";
+  "Advance the story to a new ending; do not loop back, reset, cut, or fade to the opening.";
 export const providerOpeningFrameContinuityRequirement =
-  "START FRAME: <FIRST_FRAME> is Image 1, the prior video's exact final frame. Use it unchanged as frame 0—same composition, subjects, camera, lighting, color, and motion state—then continue its motion.";
+  "START FRAME: The supplied image is the prior video's exact final frame. Start from that composition, subjects, lighting and color, then continue the action into the next story beat.";
 export const providerCrowdReferenceRequirement =
   "Image 2 is crowd-photo guidance <IMAGE_REF_0> only. Nothing later overrides the frame-0 anchor.";
 
@@ -88,7 +85,6 @@ export function composeFinalProviderVideoPrompt({
   creativePrompt,
   motionRules,
   includeArtistMotionRules,
-  venueSafeMode,
   openingFrameAttached = false,
   crowdReferenceAttached = false
 }: ComposeFinalProviderVideoPromptInput) {
@@ -111,8 +107,7 @@ export function composeFinalProviderVideoPrompt({
       includeArtistMotionRules && normalizedRules
         ? providerArtistCameraPriorityRequirement
         : providerCameraContinuityRequirement,
-      providerSeamlessLoopRequirement,
-      venueSafeMode ? providerVenueSafetyRequirement : null
+      providerSeamlessLoopRequirement
     ]
   });
 }

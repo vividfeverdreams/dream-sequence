@@ -10,7 +10,7 @@ export default function HomePage() {
               DREAM SEQUENCE
             </p>
             <p className="mt-2 max-w-sm text-sm text-white/70">
-              Live crowd-controlled AI video remixes for projector and LED wall shows.
+              A live story, shaped by everyone watching.
             </p>
           </div>
 
@@ -18,23 +18,23 @@ export default function HomePage() {
             href="/login"
             className="rounded-full border border-white/15 bg-white/8 px-5 py-2 text-sm font-medium text-white transition hover:bg-white/14"
           >
-            DJ Login
+            Log in
           </Link>
         </header>
 
         <section className="grid gap-8 py-14 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-7">
             <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">
-              Single-DJ Live MVP
+              You begin. The audience continues.
             </p>
             <div className="space-y-5">
               <h1 className="max-w-4xl text-5xl font-semibold leading-tight text-white md:text-7xl">
-                Keep the visual loop alive while the crowd bends the universe.
+                Start a story. See what happens next.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-white/72 md:text-xl">
-                DREAM SEQUENCE ingests prompts from SMS and QR form submissions, scores them for
-                safety and vibe match, remixes the active video loop, and crossfades into the next
-                approved visual as soon as it is ready.
+                Describe the first scene, then let your audience write the next chapter.
+                Scan a QR code or join through Twitch chat. Every new clip grows from
+                the last frame of the story.
               </p>
             </div>
 
@@ -49,7 +49,7 @@ export default function HomePage() {
                 href="/login"
                 className="rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
               >
-                Configure a Show
+                Start a story
               </Link>
             </div>
           </div>
@@ -57,17 +57,17 @@ export default function HomePage() {
           <div className="rounded-4xl border border-white/10 bg-white/7 p-6 shadow-glow backdrop-blur">
             <div className="rounded-[1.6rem] border border-white/8 bg-black/30 p-6">
               <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-white/45">
-                <span>Live Pipeline</span>
+                <span>Your story, together</span>
                 <span>Venue-Safe</span>
               </div>
 
               <div className="mt-6 space-y-4">
                 {[
-                  "SMS + QR intake",
-                  "Moderation + anti-spam",
-                  "AI ranking + prompt rewrite",
-                  "Selectable AI remix model",
-                  "Double-buffer crossfade"
+                  "Describe how the story begins",
+                  "Choose clip length and quality",
+                  "Invite ideas by QR code or Twitch",
+                  "Let the audience decide what happens next",
+                  "Watch the next chapter unfold"
                 ].map((item) => (
                   <div
                     key={item}
@@ -81,10 +81,11 @@ export default function HomePage() {
 
               <div className="mt-6 rounded-3xl border border-ember/25 bg-ember/10 p-4">
                 <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-ember">
-                  Live Constraint
+                  A story that keeps growing
                 </p>
                 <p className="mt-2 text-sm leading-6 text-white/74">
-                  The current loop keeps playing until the next completed video remix is ready.
+                  H3 Max creates each new chapter from the previous clip’s final frame.
+                  The current scene stays on screen while the next chapter is generated.
                 </p>
               </div>
             </div>

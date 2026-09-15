@@ -27,6 +27,8 @@ type PlaybackIntroductionAsset = {
   status?: string | null;
 } | null;
 
+export const playbackRotationSize = 3;
+
 const automaticPlaybackTransitionLeadSeconds = 0.5;
 const maximumStandbyRetryDelayMs = 10_000;
 
@@ -44,7 +46,7 @@ function comparePlaybackAssets(
 
 export function getChronologicalPlaybackRotation<
   Asset extends PlaybackRotationAsset
->(assets: Asset[], rotationSize = 5) {
+>(assets: Asset[], rotationSize = playbackRotationSize) {
   if (rotationSize <= 0) {
     return [] as Asset[];
   }
@@ -73,7 +75,11 @@ export function getChronologicalPlaybackRotation<
 
 export function getNextPlaybackRotationAsset<
   Asset extends PlaybackRotationAsset
->(assets: Asset[], currentAssetId: string | null | undefined, rotationSize = 5) {
+>(
+  assets: Asset[],
+  currentAssetId: string | null | undefined,
+  rotationSize = playbackRotationSize
+) {
   const rotation = getChronologicalPlaybackRotation(assets, rotationSize);
 
   if (rotation.length <= 1) {

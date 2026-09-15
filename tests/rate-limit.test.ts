@@ -31,7 +31,7 @@ describe("submission rate limit", () => {
 
     await expect(checkSubmissionRateLimit("session-1", "device-1", 5)).resolves.toEqual({
       allowed: false,
-      reason: "That device has already sent 5 remixes in the last ten minutes."
+      reason: "You have already sent 5 ideas in the last ten minutes."
     });
     expect(mocks.countSubmissions).toHaveBeenCalledWith({
       where: {

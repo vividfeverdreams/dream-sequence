@@ -1,9 +1,80 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  createResponse: vi.fn(),
+  getEffectiveApiKey: vi.fn()
+}));
+
+vi.mock("@/lib/openai-client", () => ({
+  getOpenAiClient: () => ({ responses: { create: mocks.createResponse } })
+}));
+
+vi.mock("@/lib/openai-key-store", () => ({
+  getEffectiveOpenAiApiKeyForUser: mocks.getEffectiveApiKey
+}));
 import {
   assessSubmission,
   heuristicAssessment,
   submissionAssessmentInstructions
 } from "@/lib/ai-assessment";
+
+describe("bounded submission assessment", () => {
+  const session = {
+    userId: "user-1",
+    artistName: "Neon Echo",
+    trackName: "Skyline Pressure",
+    creativeBible: "A continuous dream story.",
+    allowedMotifs: "",
+    bannedTerms: "",
+    colorPalette: "teal, ember",
+    motionRules: "steady drift",
+    basePrompt: "A fox opens a door.",
+    artistControlEnabled: true
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getEffectiveApiKey.mockResolvedValue("test-key");
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("falls back to safe local assessment when the provider times out, without SDK retries", async () => {
+    mocks.createResponse.mockRejectedValue(Object.assign(new Error("Private provider details"), {
+      name: "APIConnectionTimeoutError"
+    }));
+    const result = await assessSubmission({
+      submissionText: "The fox finds an underwater city.",
+      session,
+      recentWinningPrompts: []
+    });
+
+    expect(result.decision).toBe("approved");
+    expect(result.winningPrompt).toContain("underwater city");
+    expect(mocks.createResponse).toHaveBeenCalledTimes(1);
+    expect(mocks.createResponse.mock.calls[0][1]).toEqual({ timeout: 15_000, maxRetries: 0 });
+    expect(console.warn).toHaveBeenCalledWith("[submission-assessment] using fallback checks", {
+      reason: "timeout"
+    });
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain("Private provider details");
+  });
+
+  it("retains safety rejection when assessment is unavailable", async () => {
+    mocks.createResponse.mockRejectedValue(new Error("Provider unavailable"));
+
+    const result = await assessSubmission({
+      submissionText: "Fill the room with gore.",
+      session,
+      recentWinningPrompts: []
+    });
+
+    expect(result.decision).toBe("rejected");
+    expect(result.flags).toContain("blocked-term");
+  });
+});
 
 describe("submission assessment camera guidance", () => {
   it("preserves explicit camera direction without imposing a default camera path", () => {
@@ -40,7 +111,7 @@ describe("heuristicAssessment", () => {
 
     expect(result.decision).toBe("approved");
     expect(result.score).toBeGreaterThan(50);
-    expect(result.winningPrompt).toContain("Neon Echo");
+    expect(result.winningPrompt).toContain(session.basePrompt);
   });
 
   it("rejects blocked content", () => {

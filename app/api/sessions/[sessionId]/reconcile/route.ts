@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { parseAudioSyncRelayToken } from "@/lib/audio-sync-relay-token";
 import { db } from "@/lib/db";
+import { drainPendingTwitchEvents } from "@/lib/twitch";
 import { reconcilePendingRenderJobs } from "@/lib/submission-pipeline";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 type ReconcileRouteProps = {
   params: Promise<{
@@ -60,6 +61,18 @@ export async function POST(request: Request, { params }: ReconcileRouteProps) {
     );
   }
 
+  if (session.audienceMode === "twitch") {
+    after(async () => {
+      try {
+        await drainPendingTwitchEvents({ userId: authorizedUserId, limit: 5 });
+      } catch (error) {
+        console.warn("[render-reconcile] Twitch intake will retry", {
+          sessionId,
+          errorClass: error instanceof Error ? error.name : "UnknownError"
+        });
+      }
+    });
+  }
   const jobs = await reconcilePendingRenderJobs(sessionId);
 
   return NextResponse.json({

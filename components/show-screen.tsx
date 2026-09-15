@@ -5,7 +5,6 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   acknowledgeAuthoritativePlaybackAsset,
-  decideAutomaticCueTransition,
   decideManualTakeRequest,
   getAudienceFacingRemixPrompt,
   getAuthoritativeNextPlaybackCandidate,
@@ -14,7 +13,6 @@ import {
   getNextPlaybackRotationAsset,
   getPlaybackAttribution,
   getShowPlaybackCandidate,
-  isCueSyncedPlaybackActive,
   getRenderableVideoSlots,
   getStandbyRetryDelayMs,
   getStandbyVideoSlot,
@@ -92,7 +90,7 @@ export function shouldAdvanceShowPlaybackAtVideoEnd(input: {
 }) {
   return shouldAdvancePlaybackAtVideoEnd({
     activeSlotEnded: input.activeSlotEnded,
-    audioSyncConnected: input.audioSyncConnected,
+    audioSyncConnected: false,
     nextAssetReady: input.nextAssetReady
   });
 }
@@ -173,7 +171,6 @@ export function ShowScreen({
   const transitionRequestAbortRef = useRef<AbortController | null>(null);
   const transitionCommitQueueRef = useRef<Promise<void>>(Promise.resolve());
   const showUnmountedRef = useRef(false);
-  const handledCueIdRef = useRef<string | null>(null);
   const handledManualTakeIdRef = useRef<string | null>(null);
   const locallyAdvancedAssetIdRef = useRef<string | null>(null);
   const localRotationAuthoritativeAssetIdRef = useRef<string | null>(null);
@@ -190,6 +187,9 @@ export function ShowScreen({
     activeVideoSlot,
     createVideoSlot(currentAsset)
   );
+  const latestSeedRender = session.renderJobs.find((job) => job.mode === "seed");
+  const openingGenerationFailed =
+    !renderableVideoSlots.some(Boolean) && latestSeedRender?.status === "failed";
   const nextRemixRender = session.renderJobs.find(
     (job) => job.status === "queued" || job.status === "in_progress"
   );
@@ -212,8 +212,7 @@ export function ShowScreen({
   );
   const localRotationAsset = getNextPlaybackRotationAsset(
     playableAssets,
-    activeAssetId,
-    playableAssets.length
+    activeAssetId
   );
   const requestedAsset =
     requestedAssetId && requestedAssetId !== activeAssetId
@@ -242,14 +241,6 @@ export function ShowScreen({
     holdForAuthoritativeCommit
   });
   const candidateAsset = playbackCandidate?.asset ?? null;
-  const cueCandidateAsset =
-    playbackCandidate?.source === "authoritative-next"
-      ? playbackCandidate.asset
-      : null;
-  const cueSyncedPlaybackActive = isCueSyncedPlaybackActive({
-    audioSyncConnected: audioSync.connected,
-    autoTakeOnCue: audioSync.autoTakeOnCue
-  });
   useEffect(() => {
     setSubmissionUrl(new URL(getAccountRemixPath(session.userId), window.location.origin).toString());
   }, [session.userId]);
@@ -394,43 +385,6 @@ export function ShowScreen({
     setPromptReveal(null);
     setPromptExiting(false);
   }, [currentAsset?.id]);
-
-  useEffect(() => {
-    const cue = audioSync.lastCue;
-
-    if (
-      !playbackMutationsEnabled ||
-      !audioSync.connected ||
-      !cue ||
-      cue.id === handledCueIdRef.current
-    ) {
-      return;
-    }
-
-    const decision = decideAutomaticCueTransition({
-      autoTakeOnCue: audioSync.autoTakeOnCue,
-      nextAssetReady: Boolean(
-        cueCandidateAsset?.id && cueCandidateAsset.publicUrl
-      )
-    });
-
-    if (decision === "wait-for-remix") {
-      return;
-    }
-
-    handledCueIdRef.current = cue.id;
-
-    if (decision === "take-remix" && cueCandidateAsset?.id) {
-      authorizedBoundaryAssetIdRef.current = cueCandidateAsset.id;
-    }
-  }, [
-    audioSync.autoTakeOnCue,
-    audioSync.connected,
-    audioSync.lastCue,
-    cueCandidateAsset?.id,
-    cueCandidateAsset?.publicUrl,
-    playbackMutationsEnabled
-  ]);
 
   useEffect(() => {
     const requestId = audioSync.manualTakeRequestId;
@@ -773,7 +727,8 @@ export function ShowScreen({
       const boundaryAuthorized = shouldHandoffPreparedPlaybackAtBoundary({
         isMonitor: monitorMode,
         localRotation: transition?.source === "local-rotation",
-        audioSyncConnected: cueSyncedPlaybackActive,
+        // Story clips advance at the frame boundary as soon as the next scene is ready.
+        audioSyncConnected: false,
         candidateAssetId: transition?.assetId ?? null,
         authorizedAssetId:
           authoritativeCurrentAsset?.id ??
@@ -901,7 +856,6 @@ export function ShowScreen({
     [
       authoritativeCurrentAsset?.id,
       commitPlaybackTransition,
-      cueSyncedPlaybackActive,
       currentAsset?.id,
       getVideoElement,
       monitorMode,
@@ -1023,15 +977,17 @@ export function ShowScreen({
 
       <div className="pointer-events-none absolute inset-0 z-20 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.1),transparent_30%),linear-gradient(180deg,transparent_55%,rgba(0,0,0,0.45)_100%)]" />
 
-      {playbackError ? (
+      {playbackError || openingGenerationFailed ? (
         <aside
           role="alert"
           className="pointer-events-none absolute left-1/2 top-1/2 z-50 w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-ember/40 bg-black/85 p-6 text-center shadow-2xl backdrop-blur-xl"
         >
           <p className="font-mono text-xs uppercase tracking-[0.28em] text-ember">
-            Video playback failed
+            {playbackError ? "Video playback failed" : "The story could not start"}
           </p>
-          <p className="mt-3 text-base leading-7 text-white/85">{playbackError}</p>
+          <p className="mt-3 text-base leading-7 text-white/85">
+            {playbackError ?? "The opening clip failed to generate. Return to the dashboard to retry."}
+          </p>
         </aside>
       ) : null}
 
@@ -1059,8 +1015,14 @@ export function ShowScreen({
         />
       ) : null}
 
-      {session.qrOverlayVisible && submissionUrl ? (
-        <AudienceQrOverlay submissionUrl={submissionUrl} />
+      {session.qrOverlayVisible ? (
+        session.audienceMode === "twitch" ? (
+          <aside className="pointer-events-none absolute right-5 top-5 z-50 max-w-[min(22rem,48vw)] text-right">
+            <p className="text-[clamp(0.75rem,1.5vw,1.25rem)] font-semibold leading-snug text-white [text-shadow:0_2px_6px_rgba(0,0,0,0.9)]">
+              type !next in chat to continue the story
+            </p>
+          </aside>
+        ) : submissionUrl ? <AudienceQrOverlay submissionUrl={submissionUrl} /> : null
       ) : null}
     </main>
   );
@@ -1171,7 +1133,7 @@ function AudienceQrOverlay({ submissionUrl }: { submissionUrl: string }) {
     <aside className="pointer-events-none absolute right-[clamp(0.75rem,1.5vw,1.5rem)] top-[clamp(0.75rem,1.5vw,1.5rem)] z-50 w-[clamp(5rem,12vw,10rem)] overflow-hidden rounded-[clamp(0.65rem,1.2vw,1rem)] bg-white p-[clamp(0.25rem,0.55vw,0.5rem)] shadow-2xl">
       <QRCodeSVG
         value={submissionUrl}
-        title="QR code for the audience remix submission page"
+        title="QR code to continue the story"
         level="H"
         marginSize={4}
         bgColor="#ffffff"
@@ -1179,7 +1141,7 @@ function AudienceQrOverlay({ submissionUrl }: { submissionUrl: string }) {
         className="h-auto w-full"
       />
       <p className="px-1 pb-[clamp(0.2rem,0.45vw,0.4rem)] text-center font-mono text-[clamp(0.48rem,0.9vw,0.72rem)] font-black uppercase leading-[1.15] tracking-[0.08em] text-[#091018]">
-        SCAN ME TO REMIX VIDEO
+        WHAT HAPPENS NEXT?
       </p>
     </aside>
   );
@@ -1254,7 +1216,7 @@ function PromptTypewriterOverlay({
       }`}
       role="status"
       aria-live="polite"
-      aria-label={`Incoming remix${nickname ? ` from ${nickname}` : ""}${
+      aria-label={`Next in the story${nickname ? ` from ${nickname}` : ""}${
         referenceImageUrl ? " with an attached reference image" : ""
       }: ${promptText}`}
     >
@@ -1281,7 +1243,7 @@ function PromptTypewriterOverlay({
 
         <div className="px-[clamp(0.25rem,1.5vw,1rem)] py-[clamp(0.25rem,1vw,0.75rem)]">
           <p className="font-mono text-[10px] uppercase tracking-[0.38em] text-plasma sm:text-xs">
-            Incoming remix
+            Next in the story
           </p>
           {nickname ? (
             <p className="mt-4 font-mono text-[clamp(0.85rem,1.8vw,1.25rem)] uppercase tracking-[0.28em] text-white/65">

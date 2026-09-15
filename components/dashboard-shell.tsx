@@ -30,6 +30,7 @@ type DashboardShellProps = {
 type InitialGenerationJob = {
   status: string;
   failureReason: string | null;
+  canRecover?: boolean;
 };
 
 export function getInitialGenerationPresentation(input: {
@@ -185,7 +186,10 @@ export function DashboardShell({
   const progressOverlayVisible =
     pendingProgressOverlayVisibility ?? session.progressOverlayVisible;
   const playback = session.playbackState;
-  const publicLink = getAccountRemixPath(session.userId);
+  const twitchMode = session.audienceMode === "twitch";
+  const publicLink = twitchMode && session.twitchChannel
+    ? `https://www.twitch.tv/${encodeURIComponent(session.twitchChannel)}`
+    : getAccountRemixPath(session.userId);
   const showLink = `/show/${session.id}`;
   const seedRender = session.renderJobs.find((job: any) => job.mode === "seed");
   const isStartingInitialRender = workingAction === "start-session";
@@ -474,7 +478,8 @@ export function DashboardShell({
       } else if (action === "stop-session") {
         setControlFeedback("Session stopped. Audience intake is offline until you restart it.");
       } else if (action === "set-qr-overlay") {
-        setControlFeedback(value ? "Audience QR is now on the live output." : "Audience QR is now hidden.");
+        const overlayName = twitchMode ? "Twitch chat instructions" : "Audience QR";
+        setControlFeedback(value ? `${overlayName} now shown on the live output.` : `${overlayName} now hidden.`);
       } else if (action === "set-wordmark-overlay") {
         setControlFeedback(value ? "Wordmark is now centered on the live output." : "Wordmark is now hidden.");
       } else if (action === "set-wordmark-opacity") {
@@ -640,16 +645,16 @@ export function DashboardShell({
     <main className="mx-auto min-h-screen max-w-7xl px-6 py-8 lg:px-10">
       <header className="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DJ Dashboard</p>
+          <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">Story Dashboard</p>
           <h1 className="mt-4 text-4xl font-semibold text-white">{session.name}</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-white/70">
-            {session.artistName} - {session.trackName}. {currentUserName}, this control view keeps the queue moving while the current loop stays protected on screen.
+            {currentUserName}, your audience writes what happens next. Keep the story moving from here.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
           <Link href={publicLink} className="rounded-full border border-white/10 px-5 py-2 text-sm text-white/80 transition hover:bg-white/10">
-            Audience Form
+            {twitchMode ? "Twitch Chat" : "Audience Form"}
           </Link>
           <button
             onClick={openShowPopout}
@@ -825,10 +830,13 @@ export function DashboardShell({
               <div className="flex justify-end">
                 <button
                   onClick={() => void runControlAction("start-session")}
+                  disabled={workingAction === "start-session"}
                   className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:opacity-90"
                 >
                   {workingAction === "start-session"
-                    ? "Starting..."
+                    ? seedRender?.canRecover ? "Recovering..." : "Starting..."
+                    : seedRender?.canRecover
+                      ? "Recover First Video"
                     : session.status === "live"
                       ? "Retry First Video"
                       : session.status === "stopped"
@@ -940,9 +948,9 @@ export function DashboardShell({
               <div className="border-t border-white/10">
                 <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
                 <div className="max-w-xl">
-                  <p className="text-sm font-semibold text-white/88">Audience QR overlay</p>
+                  <p className="text-sm font-semibold text-white/88">{twitchMode ? "Twitch chat overlay" : "Audience QR overlay"}</p>
                   <p className="mt-1 text-xs leading-5 text-white/52">
-                    Show a scannable link to {publicLink} on the pop-out display and live monitor.
+                    {twitchMode ? "Show the instruction to type !next in chat to continue the story." : "Show a QR code so viewers can send the next part of the story."}
                   </p>
                 </div>
 
@@ -956,7 +964,7 @@ export function DashboardShell({
                     className="peer sr-only"
                   />
                   <span className="relative h-7 w-12 rounded-full border border-white/15 bg-black/40 transition after:absolute after:left-1 after:top-1 after:h-5 after:w-5 after:rounded-full after:bg-white/65 after:transition-all after:content-[''] peer-checked:border-plasma/50 peer-checked:bg-plasma/20 peer-checked:after:translate-x-5 peer-checked:after:bg-plasma peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-plasma" />
-                  <span className="sr-only">Show audience QR code on the show output</span>
+                  <span className="sr-only">{twitchMode ? "Show Twitch chat instructions on the show output" : "Show audience QR code on the show output"}</span>
                 </label>
                 </div>
 
@@ -1095,7 +1103,9 @@ export function DashboardShell({
                   title="No audience requests yet"
                   body={
                     session.status === "live"
-                      ? "Open the audience form or text the Twilio number to start feeding the remix queue."
+                      ? twitchMode
+                        ? "Ask your viewers to type !next followed by their story idea in Twitch chat."
+                        : "Share the audience QR code to start collecting ideas for what happens next."
                       : "Restart the session first, then new audience requests will appear here in real time."
                   }
                 />
@@ -1105,7 +1115,7 @@ export function DashboardShell({
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/60">
-                          {submission.source === "web" && submission.sender
+                          {(submission.source === "web" || submission.source === "twitch") && submission.sender
                             ? submission.sender
                             : submission.source}
                         </span>
@@ -1153,24 +1163,18 @@ export function DashboardShell({
             eyebrow="System"
             title="AI Environment"
             description="Current video generation and OpenAI text-scoring configuration."
-            status={googleStatus.configured ? "Connected" : "Demo"}
+            status={googleStatus.configured ? "Connected" : "Setup needed"}
             statusActive={googleStatus.configured}
           >
             <p className="text-sm leading-7 text-white/72">
-              {googleStatus.source === "env"
-                ? googleStatus.provider === "runway"
-                  ? `Using Runway for ${videoModel.label} seed and remix video calls${googleStatus.last4 ? ` with a key ending in ${googleStatus.last4}` : ""}.`
-                  : `Using the legacy direct Gemini connection${googleStatus.last4 ? ` with a key ending in ${googleStatus.last4}` : ""} for seed and remix video calls.`
-                : "No video generation API key is configured, so video rendering is using the demo fallback."}
+              {googleStatus.configured
+                ? `H3 Max is connected through fal.ai. Every clip is ${session.videoDurationSeconds} seconds at ${session.videoResolution.toLowerCase()}.`
+                : "Video generation is not connected yet. Ask your platform administrator to enable H3 Max."}
             </p>
             <p className="mt-3 text-sm leading-7 text-white/60">
-              {openAiStatus.source === "env"
-                ? `OpenAI text scoring is configured${openAiStatus.last4 ? ` with a key ending in ${openAiStatus.last4}` : ""}.`
-                : "OpenAI text scoring is not configured, so moderation and ranking use the built-in fallback behavior."}
+              Each new clip starts from the last frame of the previous scene.
+              {openAiStatus.configured ? " AI moderation and story selection are active." : " Built-in moderation and story selection are active."}
             </p>
-            <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 px-4 py-4 text-sm leading-7 text-white/72">
-              Set `RUNWAYML_API_SECRET` for selectable video models and `OPENAI_API_KEY` for AI-assisted moderation, ranking, and session setup. The dashboard never stores or edits API keys.
-            </div>
           </DashboardDisclosure>
 
           <DashboardDisclosure
@@ -1207,7 +1211,7 @@ export function DashboardShell({
                 <p className="text-sm font-semibold text-white">Show URL</p>
                 <p className="mt-2 break-all font-mono text-xs text-white/60">{showUrlDisplay || showLink}</p>
               </div>
-              <LinkCard label="Audience Remix Form" href={publicLink} />
+              <LinkCard label={twitchMode ? "Twitch Chat" : "What Happens Next?"} href={publicLink} />
               <LinkCard label="Projection View" href={showLink} newTab />
             </div>
           </DashboardDisclosure>
@@ -1260,18 +1264,15 @@ export function DashboardShell({
           </DashboardDisclosure>
 
           <DashboardDisclosure
-            eyebrow="Creative direction"
-            title="Session DNA"
-            description="Creative bible, allowed motifs, blocked themes, and motion rules."
-            status="4 rules"
+            eyebrow="Your story"
+            title="Opening Scene"
+            description="Where the story begins and how your audience joins in."
+            status={twitchMode ? "Twitch" : "QR code"}
           >
             <div className="space-y-4 text-sm leading-7 text-white/74">
-              <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">{session.creativeBible}</div>
-              <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">
-                {session.allowedMotifs ? `Allowed motifs: ${session.allowedMotifs}` : "Allowed motifs: Off (open-ended)"}
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Blocked themes: {session.bannedTerms}</div>
-              <div className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">Motion rules: {session.motionRules}</div>
+              <p className="rounded-3xl border border-white/10 bg-black/20 px-4 py-3">{session.basePrompt}</p>
+              <p>{videoModel.label} · {session.videoDurationSeconds} seconds · {session.videoResolution.toLowerCase()}</p>
+              <p>{twitchMode ? `Viewers continue the story with !next in ${session.twitchChannel || "your"} Twitch chat.` : "Viewers scan the QR code and answer: What happens next?"}</p>
             </div>
           </DashboardDisclosure>
         </div>
@@ -1279,12 +1280,12 @@ export function DashboardShell({
 
       <footer className="mt-10 flex justify-center border-t border-white/10 pt-6">
         <a
-          href="https://runwayml.com/"
+          href="https://fal.ai/"
           target="_blank"
           rel="noopener noreferrer"
           className="font-mono text-[10px] uppercase tracking-[0.24em] text-white/45 transition hover:text-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-plasma"
         >
-          Powered by Runway
+          H3 Max · Powered by fal.ai
         </a>
       </footer>
     </main>
@@ -1305,9 +1306,11 @@ function InitialGenerationStatus({
   failureReason: string | null;
 }) {
   const hasMeasuredProgress = !isStarting && typeof progress === "number";
-  const title = failed ? "First video generation failed" : "Generating your first video";
+  const title = failed
+    ? job?.canRecover ? "Your first video is ready to recover" : "First video generation failed"
+    : isStarting && job?.canRecover ? "Recovering your first video" : "Generating your first video";
   const stage = isStarting
-    ? "Starting the generation job…"
+    ? job?.canRecover ? "Preparing your existing clip for playback…" : "Starting the generation job…"
     : job?.status === "queued"
       ? "Queued for video generation — waiting for rendering to begin…"
       : "The video renderer is creating your first loop…";

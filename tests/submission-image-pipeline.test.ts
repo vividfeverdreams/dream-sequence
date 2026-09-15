@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
       create: vi.fn()
     },
     promptSubmission: {
+      create: vi.fn(),
       update: vi.fn()
     }
   };
@@ -17,7 +18,7 @@ const mocks = vi.hoisted(() => {
     assessSubmission: vi.fn(),
     assessSubmissionImage: vi.fn(),
     checkSubmissionRateLimit: vi.fn(),
-    createSubmission: vi.fn(),
+    createSubmission: transaction.promptSubmission.create,
     findSession: vi.fn(),
     getParticipantModerationBlockCount: vi.fn(),
     persistSubmissionImage: vi.fn(),

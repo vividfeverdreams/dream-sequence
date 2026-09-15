@@ -43,6 +43,25 @@ describe("client session snapshots", () => {
     mocks.getStoredRenderProgress.mockReturnValue(37);
   });
 
+  it("exposes only a recovery boolean and safe explanation for the latest completed-provider seed", async () => {
+    const job = { id: "seed-latest", mode: "seed", status: "failed", submissionId: null,
+      providerStrategy: "fal_text_to_video", providerRequestId: "private-request-id", providerOutputUri: "https://private-provider/video.mp4",
+      outputAsset: { status: "failed" }, failureReason: "Private native loader trace", providerFailureCode: null,
+      promptText: "A fox finds a door", createdAt: new Date() };
+    mocks.findUnique.mockResolvedValue({ id: "session-1", userId: "user-1", playbackState: null, submissions: [], visualAssets: [], auditEvents: [],
+      renderJobs: [job, { ...job, id: "seed-superseded" }] });
+    const snapshot = await getSessionSnapshot("session-1");
+    expect(snapshot?.session.renderJobs[0]).toMatchObject({
+      canRecover: true,
+      failureReason: "The video finished generating, but could not be prepared for playback. Recover the existing clip."
+    });
+    expect(snapshot?.session.renderJobs[1].canRecover).toBe(false);
+    const serialized = JSON.stringify(snapshot);
+    for (const privateValue of ["private-request-id", "private-provider", "Private native loader trace", "providerRequestId", "providerOutputUri", "outputAsset", "providerStrategy"]) {
+      expect(serialized).not.toContain(privateValue);
+    }
+  });
+
   it("redacts participant identifiers while preserving web attribution", async () => {
     const createdAt = new Date("2026-07-28T12:00:00.000Z");
     const smsSourceSubmission = {
@@ -216,7 +235,7 @@ describe("client session snapshots", () => {
     expect(query.include.submissions.select).not.toHaveProperty("senderFingerprint");
     expect(query.include.submissions.select).not.toHaveProperty("messageSid");
     expect(query.include.renderJobs.select).not.toHaveProperty("submission");
-    expect(query.include.renderJobs.select).not.toHaveProperty("providerRequestId");
+    expect(query.include.renderJobs.select).toHaveProperty("providerRequestId", true);
     expect(query.include.renderJobs.select).toHaveProperty(
       "providerFailureCode",
       true

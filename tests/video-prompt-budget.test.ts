@@ -7,7 +7,6 @@ import {
   providerCrowdReferenceRequirement,
   providerOpeningFrameContinuityRequirement,
   providerSeamlessLoopRequirement,
-  providerVenueSafetyRequirement,
   videoProviderPromptCharacterBudget
 } from "@/lib/video-prompt-budget";
 
@@ -45,7 +44,6 @@ describe("video prompt budget composition", () => {
       creativePrompt: "Hostile optional context. ".repeat(100),
       motionRules: "Keep motion fluid",
       includeArtistMotionRules: true,
-      venueSafeMode: true,
       openingFrameAttached: true,
       crowdReferenceAttached: true
     });
@@ -64,7 +62,6 @@ describe("video prompt budget composition", () => {
     const prompt = composeFinalProviderVideoPrompt({
       creativePrompt: "Continue the luminous architecture.",
       includeArtistMotionRules: false,
-      venueSafeMode: false,
       openingFrameAttached: false,
       crowdReferenceAttached: true
     });
@@ -94,42 +91,39 @@ describe("video prompt budget composition", () => {
       creativePrompt:
         "The crowd requests a slow dolly backward through a prismatic city. ".repeat(20),
       motionRules,
-      includeArtistMotionRules: true,
-      venueSafeMode: true
+      includeArtistMotionRules: true
     });
 
     expect(prompt).toContain("slow dolly backward");
     expect(prompt).toContain(motionRules);
     expect(prompt).toContain(providerArtistCameraPriorityRequirement);
     expect(prompt).toContain(providerSeamlessLoopRequirement);
-    expect(prompt).toContain(providerVenueSafetyRequirement);
+    expect(prompt).not.toContain("Venue-safe:");
     expect(prompt.length).toBeLessThanOrEqual(
       videoProviderPromptCharacterBudget
     );
   });
 
-  it("preserves crowd camera direction but omits artist and safety rules in raw mode", () => {
+  it("preserves crowd camera direction without adding disabled artist rules", () => {
     const artistRuleSentinel = "ARTIST_LOCKED_CAMERA_SENTINEL";
     const prompt = composeFinalProviderVideoPrompt({
       creativePrompt: "Use a fast clockwise audience-requested orbit.",
       motionRules: artistRuleSentinel,
-      includeArtistMotionRules: false,
-      venueSafeMode: false
+      includeArtistMotionRules: false
     });
 
     expect(prompt).toContain("fast clockwise audience-requested orbit");
     expect(prompt).not.toContain(artistRuleSentinel);
     expect(prompt).toContain(providerCameraContinuityRequirement);
     expect(prompt).toContain(providerSeamlessLoopRequirement);
-    expect(prompt).not.toContain(providerVenueSafetyRequirement);
+    expect(prompt).not.toContain("Venue-safe:");
   });
 
   it("does not invent a camera choice when neither prompt nor rules specify one", () => {
     const prompt = composeFinalProviderVideoPrompt({
       creativePrompt: "Pulse the prism geometry on every phrase change.",
       motionRules: "Dissolve cleanly between forms",
-      includeArtistMotionRules: true,
-      venueSafeMode: true
+      includeArtistMotionRules: true
     });
 
     expect(prompt).toContain("if neither specifies camera, leave it unrestricted");
@@ -140,8 +134,7 @@ describe("video prompt budget composition", () => {
     const prompt = composeFinalProviderVideoPrompt({
       creativePrompt: "C".repeat(900),
       motionRules: "R".repeat(300),
-      includeArtistMotionRules: true,
-      venueSafeMode: true
+      includeArtistMotionRules: true
     });
     const retainedCreativeCharacters = prompt.match(/^C+/)?.[0].length ?? 0;
 
@@ -149,7 +142,7 @@ describe("video prompt budget composition", () => {
     expect(prompt).toContain("R".repeat(300));
     expect(prompt).toContain(providerArtistCameraPriorityRequirement);
     expect(prompt).toContain(providerSeamlessLoopRequirement);
-    expect(prompt).toContain(providerVenueSafetyRequirement);
+    expect(prompt).not.toContain("Venue-safe:");
     expect(prompt.length).toBeLessThanOrEqual(
       videoProviderPromptCharacterBudget
     );

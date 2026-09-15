@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getTwitchConnectionStatus } from "@/lib/twitch";
 import { recordAuditEvent } from "@/lib/audit";
 import { completePlaybackTransition } from "@/lib/playback-transition";
 import {
@@ -22,9 +23,12 @@ import {
 } from "@/lib/submission-rate-limit-state";
 import { createSessionCode, normalizePromptText } from "@/lib/utils";
 import { queueAutomatedRender } from "@/lib/submission-pipeline";
+import { reconcileRenderJob } from "@/lib/rendering";
+import { canRecoverSeedRender, classifySeedPreparationFailure } from "@/lib/seed-render-recovery";
 import {
   normalizeVideoDurationSecondsForModel,
   normalizeVideoModelId,
+  normalizeVideoResolution,
   type VideoModelId
 } from "@/lib/video-models";
 
@@ -47,15 +51,20 @@ type SessionInput = {
   autoSelectEnabled: boolean;
   videoModel?: VideoModelId | string | null;
   videoDurationSeconds: number;
+  videoResolution?: string;
+  audienceMode?: "web" | "twitch";
+  twitchChannel?: string;
   submissionRateLimitEnabled: boolean;
   submissionRateLimitCount: number;
 };
 
 export const initialGenerationQueueFailureMessage =
   "The first video could not be queued. Retry the generation.";
+export const initialGenerationRecoveryFailureMessage =
+  "The existing clip could not be recovered. No new generation was requested. Try recovering it again.";
 
 export async function createDjSession(userId: string, input: SessionInput) {
-  const code = createSessionCode(`${input.artistName}-${input.trackName}`);
+  const code = createSessionCode("story");
   const videoModel = normalizeVideoModelId(input.videoModel);
   const videoDurationSeconds = normalizeVideoDurationSecondsForModel(
     videoModel,
@@ -66,10 +75,10 @@ export async function createDjSession(userId: string, input: SessionInput) {
     data: {
       userId,
       code,
-      name: input.name,
+      name: input.name || input.basePrompt.trim().slice(0, 72),
       artistName: input.artistName,
       trackName: input.trackName,
-      creativeBible: normalizePromptText(input.creativeBible),
+      creativeBible: normalizePromptText(input.creativeBible || input.basePrompt),
       allowedMotifs: input.allowedMotifs,
       bannedTerms: input.bannedTerms,
       colorPalette: input.colorPalette,
@@ -82,6 +91,9 @@ export async function createDjSession(userId: string, input: SessionInput) {
       autoSelectEnabled: input.autoSelectEnabled,
       videoModel,
       videoDurationSeconds,
+      videoResolution: normalizeVideoResolution(input.videoResolution),
+      audienceMode: input.audienceMode ?? "web",
+      twitchChannel: input.audienceMode === "twitch" ? input.twitchChannel ?? null : null,
       playbackState: {
         create: {
           status: "idle"
@@ -133,6 +145,13 @@ export async function getPrimarySessionForUser(userId: string) {
 export async function startDjSession(sessionId: string, userId: string) {
   const ownedSession = await requireOwnedSession(sessionId, userId);
 
+  if (ownedSession.audienceMode === "twitch") {
+    const connection = await getTwitchConnectionStatus(userId);
+    if (!connection.connected || connection.login !== ownedSession.twitchChannel) {
+      throw new Error("Reconnect the Twitch account for this story before starting it.");
+    }
+  }
+
   const session = await db.dJSession.update({
     where: {
       id: ownedSession.id
@@ -143,7 +162,8 @@ export async function startDjSession(sessionId: string, userId: string) {
       stoppedAt: null,
       playbackState: {
         update: {
-          status: "holding"
+          status: "holding",
+          emergencyPaused: false
         }
       }
     },
@@ -160,6 +180,12 @@ export async function startDjSession(sessionId: string, userId: string) {
   });
 
   if (!session.playbackState?.currentAssetId && session.renderJobs.length === 0) {
+    const recovery = await recoverFailedInitialRender(session.id, userId);
+
+    // A recovery attempt never falls through to a new billable generation,
+    // including when another request owns the claim or preparation fails.
+    if (recovery !== "not-recoverable") return session;
+
     const queuedRender = await queueAutomatedRender(
       session.id,
       null,
@@ -267,6 +293,110 @@ export async function startDjSession(sessionId: string, userId: string) {
   });
 
   return session;
+}
+
+async function recoverFailedInitialRender(sessionId: string, userId: string) {
+  const recovery = await db.$transaction(async (tx) => {
+    const current = await tx.dJSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        userId: true,
+        updatedAt: true,
+        playbackState: { select: { currentAssetId: true } },
+        renderJobs: {
+          where: { status: { in: ["queued", "in_progress"] } },
+          select: { id: true },
+          take: 1
+        }
+      }
+    });
+    if (!current || current.userId !== userId) throw new Error("Session not found.");
+    if (current.playbackState?.currentAssetId || current.renderJobs.length > 0) {
+      return { kind: "already-active" as const };
+    }
+
+    const seed = await tx.renderJob.findFirst({
+      where: { sessionId, mode: "seed" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: {
+        id: true,
+        mode: true,
+        status: true,
+        submissionId: true,
+        providerStrategy: true,
+        providerRequestId: true,
+        providerOutputUri: true,
+        outputAssetId: true,
+        failureReason: true,
+        outputAsset: { select: { status: true } }
+      }
+    });
+    if (!seed || !canRecoverSeedRender(seed)) return { kind: "not-recoverable" as const };
+
+    // Match the generation queue's session lease so a concurrent seed cannot
+    // be submitted between inspecting and reclaiming the existing render.
+    const sessionClaim = await tx.dJSession.updateMany({
+      where: {
+        id: sessionId,
+        userId,
+        updatedAt: current.updatedAt,
+        playbackState: { is: { currentAssetId: null } },
+        renderJobs: { none: { status: { in: ["queued", "in_progress"] } } }
+      },
+      data: { updatedAt: new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1)) }
+    });
+    if (sessionClaim.count !== 1) return { kind: "already-active" as const };
+
+    const jobClaim = await tx.renderJob.updateMany({
+      where: {
+        id: seed.id,
+        sessionId,
+        mode: "seed",
+        status: "failed",
+        submissionId: null,
+        providerStrategy: seed.providerStrategy,
+        providerRequestId: seed.providerRequestId,
+        providerOutputUri: seed.providerOutputUri,
+        outputAssetId: seed.outputAssetId
+      },
+      data: {
+        status: "in_progress",
+        failureReason: null,
+        providerFailureCode: null,
+        completedAt: null,
+        lastPolledAt: null
+      }
+    });
+    if (jobClaim.count !== 1) return { kind: "already-active" as const };
+    const assetClaim = await tx.visualAsset.updateMany({
+      where: { id: seed.outputAssetId!, sessionId, status: "failed" },
+      data: { status: "processing" }
+    });
+    if (assetClaim.count !== 1) throw new Error(initialGenerationRecoveryFailureMessage);
+
+    return {
+      kind: "claimed" as const,
+      jobId: seed.id,
+      requestId: seed.providerRequestId,
+      previousFailureCode: classifySeedPreparationFailure(seed.failureReason)
+    };
+  });
+
+  if (recovery.kind !== "claimed") return recovery.kind;
+
+  console.info("[session-start] recovering existing seed", {
+    sessionId,
+    renderJobId: recovery.jobId,
+    providerRequestId: recovery.requestId,
+    previousFailureCode: recovery.previousFailureCode
+  });
+  try {
+    const result = await reconcileRenderJob(recovery.jobId);
+    if (!result || result.status === "failed") throw new Error(initialGenerationRecoveryFailureMessage);
+  } catch {
+    throw new Error(initialGenerationRecoveryFailureMessage);
+  }
+  return "recovered" as const;
 }
 
 async function adoptReadyInitialAsset(sessionId: string, assetId: string) {
@@ -613,9 +743,9 @@ export function buildFallbackRemixPrompt(session: {
   basePrompt: string;
 }) {
   return [
-    "Shift the loop toward a fresh geometric pulse with a subtle palette reset.",
-    session.basePrompt,
-    "Keep the transformation visually coherent."
+    "Continue the story with one new, natural event, starting from the current final frame.",
+    `Story opening for context only: ${session.basePrompt}`,
+    "Preserve the characters and visual style. Advance the action without restarting the opening."
   ].join(" ");
 }
 

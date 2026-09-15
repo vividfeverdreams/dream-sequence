@@ -1,9 +1,4 @@
-export const videoModelIds = [
-  "gemini_omni_flash",
-  "seedance2",
-  "seedance2_5",
-  "hailuo3"
-] as const;
+export const videoModelIds = ["h3_max"] as const;
 
 export type VideoModelId = (typeof videoModelIds)[number];
 
@@ -16,42 +11,31 @@ export type VideoModelDefinition = {
   defaultDurationSeconds: number;
 };
 
-export const defaultVideoModelId: VideoModelId = "gemini_omni_flash";
+export const defaultVideoModelId: VideoModelId = "h3_max";
 
+// Verified against fal's H3 Max input schema: 5–15 whole seconds.
 export const videoModelDefinitions: readonly VideoModelDefinition[] = [
   {
-    id: "gemini_omni_flash",
-    label: "Gemini Omni Flash",
-    description: "Fast, flexible generation for responsive live remixes.",
-    minDurationSeconds: 3,
-    maxDurationSeconds: 10,
-    defaultDurationSeconds: 8
-  },
-  {
-    id: "seedance2",
-    label: "Seedance 2.0",
-    description: "Cinematic motion with strong prompt adherence.",
-    minDurationSeconds: 4,
-    maxDurationSeconds: 15,
-    defaultDurationSeconds: 8
-  },
-  {
-    id: "seedance2_5",
-    label: "Seedance 2.5",
-    description: "Longer clips with enhanced visual consistency.",
-    minDurationSeconds: 4,
-    maxDurationSeconds: 30,
-    defaultDurationSeconds: 8
-  },
-  {
-    id: "hailuo3",
-    label: "Hailuo 3.0 (H3)",
-    description: "Expressive motion with polished cinematic detail.",
+    id: "h3_max",
+    label: "H3 Max",
+    description: "A continuous story, generated with H3 Max on fal.ai.",
     minDurationSeconds: 5,
     maxDurationSeconds: 15,
-    defaultDurationSeconds: 8
+    defaultDurationSeconds: 5
   }
 ];
+
+export const videoResolutions = ["480P", "768P", "1080P"] as const;
+export type VideoResolution = (typeof videoResolutions)[number];
+export const defaultVideoResolution: VideoResolution = "768P";
+
+export function isVideoResolution(value: unknown): value is VideoResolution {
+  return typeof value === "string" && (videoResolutions as readonly string[]).includes(value);
+}
+
+export function normalizeVideoResolution(value: unknown): VideoResolution {
+  return isVideoResolution(value) ? value : defaultVideoResolution;
+}
 
 const videoModelDefinitionsById = new Map(
   videoModelDefinitions.map((definition) => [definition.id, definition])

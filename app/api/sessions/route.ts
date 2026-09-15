@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { createDjSession } from "@/lib/session-service";
+import { getTwitchConnectionStatus } from "@/lib/twitch";
 import { sessionFormSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
@@ -32,8 +33,17 @@ export async function POST(request: Request) {
     );
   }
 
+  const twitch = parsed.data.audienceMode === "twitch"
+    ? await getTwitchConnectionStatus(user.id)
+    : null;
+  if (twitch && !twitch.connected) {
+    return NextResponse.json({ error: twitch.configured
+      ? "Connect your Twitch account before starting a Twitch story."
+      : "Twitch mode needs to be configured by the platform owner first." }, { status: 400 });
+  }
   const session = await createDjSession(user.id, {
-    ...parsed.data
+    ...parsed.data,
+    twitchChannel: twitch?.login ?? undefined
   });
 
   return NextResponse.json({

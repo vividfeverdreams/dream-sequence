@@ -8,203 +8,38 @@ import {
 } from "@/lib/schemas";
 
 const validSession = {
-  name: "A",
-  artistName: "M",
-  trackName: "X",
-  creativeBible: "Dreamlike",
-  allowedMotifs: "Fog",
-  bannedTerms: "None",
-  colorPalette: "Blue",
-  motionRules: "Slow",
-  basePrompt: "A dream",
-  imageReferenceUrl: "",
-  smsNumber: "",
-  venueSafeMode: true,
-  artistControlEnabled: true,
-  autoSelectEnabled: true,
-  videoModel: "gemini_omni_flash" as const,
-  videoDurationSeconds: 8,
-  submissionRateLimitEnabled: false,
-  submissionRateLimitCount: 3
+  name: "Dream", artistName: "M", trackName: "X", creativeBible: "Dreamlike",
+  allowedMotifs: "Fog", bannedTerms: "None", colorPalette: "Blue", motionRules: "Slow",
+  basePrompt: "A fox discovers a door in the moon.", videoModel: "h3_max", videoDurationSeconds: 5
 };
 
-describe("sessionFormSchema", () => {
-  it("accepts concise session details and normalizes blank optional fields", () => {
-    const result = sessionFormSchema.safeParse(validSession);
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.artistName).toBe("M");
-      expect(result.data.trackName).toBe("X");
-      expect(result.data.imageReferenceUrl).toBeUndefined();
-      expect(result.data.smsNumber).toBeUndefined();
-    }
+describe("story setup", () => {
+  it("requires only the story opening and supplies valid defaults", () => {
+    const result = sessionFormSchema.parse({ basePrompt: "  A fox discovers a door in the moon.  " });
+    expect(result).toMatchObject({ basePrompt: validSession.basePrompt, videoModel: "h3_max", videoDurationSeconds: 5, videoResolution: "768P", audienceMode: "web", submissionRateLimitEnabled: true });
   });
-
-  it("returns an actionable error for a missing required field", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      basePrompt: "   "
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe("Base prompt is required.");
-    }
+  it.each([5, 10, 15])("accepts a supported %s-second clip", (videoDurationSeconds) => {
+    expect(sessionFormSchema.safeParse({ ...validSession, videoDurationSeconds }).success).toBe(true);
   });
-
-  it("returns an actionable error for an invalid optional URL", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      imageReferenceUrl: "not-a-url"
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe("Enter a valid image reference URL.");
-    }
+  it.each([4, 16, 5.5])("rejects unsupported clip length %s", (videoDurationSeconds) => {
+    expect(sessionFormSchema.safeParse({ ...validSession, videoDurationSeconds }).success).toBe(false);
   });
-
-  it("accepts an empty allowed-motifs list when the creation toggle is off", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      allowedMotifs: ""
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.allowedMotifs).toBe("");
-    }
+  it.each(["480P", "768P", "1080P"])("accepts H3 resolution %s", (videoResolution) => {
+    expect(sessionFormSchema.parse({ ...validSession, videoResolution }).videoResolution).toBe(videoResolution);
   });
-
-  it("accepts artist control being disabled for raw crowd prompts", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      artistControlEnabled: false
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.artistControlEnabled).toBe(false);
-    }
+  it.each(["420P", "720P", "4K"])("rejects unsupported resolution %s", (videoResolution) => {
+    expect(sessionFormSchema.safeParse({ ...validSession, videoResolution }).success).toBe(false);
   });
-
-  it("accepts a supported custom video length", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      videoDurationSeconds: 6
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.videoDurationSeconds).toBe(6);
-    }
+  it.each(["gemini_omni_flash", "seedance2", "seedance2_5", "hailuo3"])("removes legacy model %s", (videoModel) => {
+    expect(sessionFormSchema.safeParse({ ...validSession, videoModel }).success).toBe(false);
   });
-
-  it("accepts a model and duration supported by that model", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      videoModel: "seedance2_5",
-      videoDurationSeconds: 30
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.videoModel).toBe("seedance2_5");
-      expect(result.data.videoDurationSeconds).toBe(30);
-    }
+  it("rejects blank and overlong opening prompts", () => {
+    expect(sessionFormSchema.safeParse({ basePrompt: "   " }).success).toBe(false);
+    expect(sessionFormSchema.safeParse({ basePrompt: "x".repeat(1201) }).success).toBe(false);
   });
-
-  it("keeps existing clients on Omni at the eight-second default", () => {
-    const {
-      videoModel: _videoModel,
-      videoDurationSeconds: _videoDurationSeconds,
-      ...legacySession
-    } = validSession;
-    const result = sessionFormSchema.safeParse(legacySession);
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.videoModel).toBe("gemini_omni_flash");
-      expect(result.data.videoDurationSeconds).toBe(8);
-    }
-  });
-
-  it("rejects a video length outside the selected model's range", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      videoModel: "seedance2",
-      videoDurationSeconds: 16
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]).toMatchObject({
-        message: "Video length must be between 4 and 15 seconds for Seedance 2.0.",
-        path: ["videoDurationSeconds"]
-      });
-    }
-  });
-
-  it("rejects an unknown video model", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      videoModel: "future-model"
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.path).toEqual(["videoModel"]);
-    }
-  });
-
-  it("keeps artist control on by default for existing clients", () => {
-    const { artistControlEnabled: _artistControlEnabled, ...legacySession } = validSession;
-    const result = sessionFormSchema.safeParse(legacySession);
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.artistControlEnabled).toBe(true);
-    }
-  });
-
-  it("keeps the device submission limit off by default", () => {
-    const {
-      submissionRateLimitEnabled: _submissionRateLimitEnabled,
-      submissionRateLimitCount: _submissionRateLimitCount,
-      ...legacySession
-    } = validSession;
-    const result = sessionFormSchema.safeParse(legacySession);
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.submissionRateLimitEnabled).toBe(false);
-      expect(result.data.submissionRateLimitCount).toBe(3);
-    }
-  });
-
-  it("accepts a configurable ten-minute device submission limit", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      submissionRateLimitEnabled: true,
-      submissionRateLimitCount: 7
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.submissionRateLimitEnabled).toBe(true);
-      expect(result.data.submissionRateLimitCount).toBe(7);
-    }
-  });
-
-  it("rejects an invalid device submission limit", () => {
-    const result = sessionFormSchema.safeParse({
-      ...validSession,
-      submissionRateLimitEnabled: true,
-      submissionRateLimitCount: 0
-    });
-
-    expect(result.success).toBe(false);
+  it("supports Twitch as a distinct input mode", () => {
+    expect(sessionFormSchema.parse({ ...validSession, audienceMode: "twitch" }).audienceMode).toBe("twitch");
+    expect(sessionFormSchema.safeParse({ ...validSession, audienceMode: "discord" }).success).toBe(false);
   });
 });
 
@@ -267,56 +102,23 @@ describe("sessionPrefillSchema", () => {
   });
 });
 
-describe("publicSubmissionSchema", () => {
-  it("accepts a catalog statement and tied response selection", () => {
-    const result = publicSubmissionSchema.safeParse({
-      templateId: "choice-style",
-      responseId: "choice-style-1-1",
-      senderLabel: "Neon Shark",
-      participantToken: "device-token-1234567890"
-    });
-
-    expect(result.success).toBe(true);
+describe("story continuation submissions", () => {
+  const input = { prompt: "The fox opens the door to an underwater city.", participantToken: "device-token-1234567890" };
+  it("accepts original free text and an optional nickname", () => {
+    expect(publicSubmissionSchema.parse(input)).toMatchObject({ ...input, senderLabel: "Guest" });
+    expect(publicSubmissionSchema.parse({ ...input, senderLabel: "Neon Shark" }).senderLabel).toBe("Neon Shark");
   });
-
-  it("accepts an image statement without a response id", () => {
-    const result = publicSubmissionSchema.safeParse({
-      templateId: "image-environment",
-      responseId: "",
-      senderLabel: "Neon Shark",
-      participantToken: "device-token-1234567890"
-    });
-
-    expect(result.success).toBe(true);
+  it("rejects missing, blank, very short, and oversized prompts", () => {
+    for (const prompt of [undefined, "  ", "next", "x".repeat(1201)]) {
+      expect(publicSubmissionSchema.safeParse({ ...input, prompt }).success).toBe(false);
+    }
   });
-
-  it("does not accept an arbitrary free-text prompt in place of a catalog id", () => {
-    const result = publicSubmissionSchema.safeParse({
-      prompt: "Make the water glow",
-      senderLabel: "Neon Shark",
-      participantToken: "device-token-1234567890"
-    });
-
-    expect(result.success).toBe(false);
+  it("requires a persistent participant token and screen-safe nickname", () => {
+    expect(publicSubmissionSchema.safeParse({ ...input, participantToken: "short" }).success).toBe(false);
+    expect(publicSubmissionSchema.safeParse({ ...input, senderLabel: "<script>" }).success).toBe(false);
   });
-
-  it("requires a screen-safe nickname and persistent device token", () => {
-    expect(
-      publicSubmissionSchema.safeParse({
-        templateId: "choice-style",
-        responseId: "choice-style-1-1",
-        senderLabel: "Neon Shark",
-        participantToken: "device-token-1234567890"
-      }).success
-    ).toBe(true);
-    expect(
-      publicSubmissionSchema.safeParse({
-        templateId: "choice-style",
-        responseId: "choice-style-1-1",
-        senderLabel: "<script>",
-        participantToken: "short"
-      }).success
-    ).toBe(false);
+  it("does not accept the removed questionnaire instead of a prompt", () => {
+    expect(publicSubmissionSchema.safeParse({ templateId: "choice-style", responseId: "choice-style-1-1", participantToken: input.participantToken }).success).toBe(false);
   });
 });
 

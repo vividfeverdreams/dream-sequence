@@ -15,6 +15,7 @@ export type PublicSubmissionState =
   | "approved"
   | "banned"
   | "blocked"
+  | "failed"
   | "queued"
   | "rendering"
   | "ready"
@@ -192,6 +193,21 @@ function describeSubmissionStatus(
       state: "ready",
       title: "Ready for transition",
       detail: "The remix finished rendering and is loaded as a candidate for the next crossfade.",
+      prompt,
+      referenceImageUrl,
+      submittedAt,
+      updatedAt
+    };
+  }
+
+  if (submission.status === "failed") {
+    return {
+      state: "failed",
+      title: "This idea could not become a video",
+      detail:
+        renderJob?.providerFailureCode === "FAL_SUBMISSION_UNKNOWN"
+          ? "The video service did not confirm this request. Automatic retries have stopped to avoid duplicate videos."
+          : "Video generation failed and automatic retries have stopped. You can submit another idea.",
       prompt,
       referenceImageUrl,
       submittedAt,

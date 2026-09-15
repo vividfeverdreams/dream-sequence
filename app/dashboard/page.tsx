@@ -20,9 +20,9 @@ export default async function DashboardPage() {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DREAM SEQUENCE</p>
-            <h1 className="mt-4 text-4xl font-semibold text-white">Set up your first live session.</h1>
+            <h1 className="mt-4 text-4xl font-semibold text-white">Every story starts somewhere.</h1>
             <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">
-              Create the visual DNA once, then let SMS and QR prompts remix the show inside those boundaries.
+              Describe the opening scene. Your audience decides what happens next.
             </p>
           </div>
 

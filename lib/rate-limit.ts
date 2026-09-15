@@ -30,11 +30,11 @@ export async function checkSubmissionRateLimit(
   });
 
   if (recentCount >= submissionLimit) {
-    const remixLabel = submissionLimit === 1 ? "remix" : "remixes";
+    const remixLabel = submissionLimit === 1 ? "idea" : "ideas";
 
     return {
       allowed: false,
-      reason: `That device has already sent ${submissionLimit} ${remixLabel} in the last ten minutes.`
+      reason: `You have already sent ${submissionLimit} ${remixLabel} in the last ten minutes.`
     };
   }
 

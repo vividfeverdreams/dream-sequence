@@ -12,6 +12,7 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/session-service", () => ({
   initialGenerationQueueFailureMessage:
     "The first video could not be queued. Retry the generation.",
+  initialGenerationRecoveryFailureMessage: "The existing clip could not be recovered. No new generation was requested. Try recovering it again.",
   startDjSession: mocks.startDjSession
 }));
 

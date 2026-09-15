@@ -4,7 +4,7 @@ import {
   promoteOldestReadyAsset
 } from "@/lib/playback-queue";
 
-describe("five-video playback rotation", () => {
+describe("three-video playback rotation", () => {
   const client = {
     playbackState: {
       findUnique: vi.fn(),
@@ -18,6 +18,54 @@ describe("five-video playback rotation", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  it("keeps only the newest three story videos cycling when no fresh video is ready", async () => {
+    const assets = Array.from({ length: 5 }, (_, index) => ({
+      id: `chapter-${index + 1}`,
+      kind: "remix",
+      status: "archived",
+      createdAt: new Date(Date.UTC(2026, 8, 13, 12, index + 1))
+    }));
+    let currentAssetId = "chapter-5";
+
+    client.playbackState.findUnique.mockImplementation(async () => ({
+      id: "playback-1",
+      currentAssetId,
+      nextAssetId: null
+    }));
+    client.visualAsset.findFirst.mockImplementation(async ({ where }) =>
+      where.status === "ready"
+        ? null
+        : assets.find((asset) => asset.id === where.id) ?? null
+    );
+    client.visualAsset.findMany.mockImplementation(async ({ take }) =>
+      assets.filter((asset) => asset.id !== currentAssetId).reverse().slice(0, take)
+    );
+    client.playbackState.updateMany.mockResolvedValue({ count: 1 });
+
+    for (const expectedNextId of [
+      "chapter-3",
+      "chapter-4",
+      "chapter-5",
+      "chapter-3"
+    ]) {
+      await expect(
+        promoteOldestReadyAsset("session-1", client)
+      ).resolves.toBe(expectedNextId);
+      expect(client.playbackState.updateMany).toHaveBeenLastCalledWith({
+        where: {
+          id: "playback-1",
+          currentAssetId,
+          nextAssetId: null
+        },
+        data: {
+          nextAssetId: expectedNextId,
+          status: "live"
+        }
+      });
+      currentAssetId = expectedNextId;
+    }
   });
 
   it("prioritizes the oldest fresh ready asset over archived rotation peers", async () => {
@@ -71,7 +119,7 @@ describe("five-video playback rotation", () => {
     });
   });
 
-  it("introduces fresh remix five immediately after the original, before rotating remix one through five", async () => {
+  it("introduces fresh remix five immediately after the original, before rotating remix three through five", async () => {
     client.playbackState.findUnique
       .mockResolvedValueOnce({
         id: "playback-1",
@@ -149,10 +197,10 @@ describe("five-video playback rotation", () => {
 
     await expect(
       promoteOldestReadyAsset("session-1", client)
-    ).resolves.toBe("remix-1");
+    ).resolves.toBe("remix-3");
   });
 
-  it("cycles deterministically to the chronological successor within the latest five playable assets", async () => {
+  it("cycles deterministically to the chronological successor within the latest three playable assets", async () => {
     client.playbackState.findUnique.mockResolvedValue({
       id: "playback-1",
       currentAssetId: "asset-3",
@@ -232,50 +280,33 @@ describe("five-video playback rotation", () => {
     });
   });
 
-  it("queries five bounded peers so an evicted current asset can enter the newest window", async () => {
+  it.each([1, 6])("queries three bounded peers and selects the newest window from current asset %s", async (currentIndex) => {
+    const currentAssetId = `asset-${currentIndex}`;
+    const assets = Array.from({ length: 6 }, (_, index) => ({
+      id: `asset-${index + 1}`,
+      createdAt: new Date(Date.UTC(2026, 6, 28, 12, index + 1))
+    }));
     client.playbackState.findUnique.mockResolvedValue({
       id: "playback-1",
-      currentAssetId: "asset-6",
+      currentAssetId,
       nextAssetId: null
     });
     client.visualAsset.findFirst
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: "asset-6",
-        createdAt: new Date("2026-07-28T12:06:00.000Z")
-      });
-    client.visualAsset.findMany.mockResolvedValue([
-      {
-        id: "asset-5",
-        createdAt: new Date("2026-07-28T12:05:00.000Z")
-      },
-      {
-        id: "asset-4",
-        createdAt: new Date("2026-07-28T12:04:00.000Z")
-      },
-      {
-        id: "asset-3",
-        createdAt: new Date("2026-07-28T12:03:00.000Z")
-      },
-      {
-        id: "asset-2",
-        createdAt: new Date("2026-07-28T12:02:00.000Z")
-      },
-      {
-        id: "asset-1",
-        createdAt: new Date("2026-07-28T12:01:00.000Z")
-      }
-    ]);
+      .mockResolvedValueOnce(assets[currentIndex - 1]);
+    client.visualAsset.findMany.mockImplementation(async ({ take }) =>
+      assets.filter((asset) => asset.id !== currentAssetId).reverse().slice(0, take)
+    );
     client.playbackState.updateMany.mockResolvedValue({
       count: 1
     });
 
     await expect(
       promoteOldestReadyAsset("session-1", client)
-    ).resolves.toBe("asset-2");
+    ).resolves.toBe("asset-4");
 
     const rotationQuery = client.visualAsset.findMany.mock.calls[0]?.[0];
-    expect(rotationQuery.take).toBe(playbackRotationSize);
+    expect(rotationQuery.take).toBe(3);
     expect(rotationQuery.orderBy).toEqual([
       {
         createdAt: "desc"
@@ -285,11 +316,11 @@ describe("five-video playback rotation", () => {
       }
     ]);
     expect(rotationQuery.where.id).toEqual({
-      not: "asset-6"
+      not: currentAssetId
     });
   });
 
-  it("introduces remix six, then wraps to remix two after remix one is evicted", async () => {
+  it("introduces remix six, then wraps to remix four after remix three is evicted", async () => {
     client.playbackState.findUnique
       .mockResolvedValueOnce({
         id: "playback-1",
@@ -353,7 +384,7 @@ describe("five-video playback rotation", () => {
     ).resolves.toBe("remix-6");
     await expect(
       promoteOldestReadyAsset("session-1", client)
-    ).resolves.toBe("remix-2");
+    ).resolves.toBe("remix-4");
   });
 
   it("wraps from the newest current asset to the oldest peer in a two-video ring", async () => {

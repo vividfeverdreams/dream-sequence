@@ -1,7 +1,10 @@
 import { db } from "@/lib/db";
-import { getNextPlaybackRotationAsset } from "@/lib/remix-transition";
+import {
+  getNextPlaybackRotationAsset,
+  playbackRotationSize
+} from "@/lib/remix-transition";
 
-export const playbackRotationSize = 5;
+export { playbackRotationSize };
 
 type PromoteOldestReadyAssetOptions = {
   allowArchivedRotation?: boolean;

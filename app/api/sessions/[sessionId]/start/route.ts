@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import {
   initialGenerationQueueFailureMessage,
+  initialGenerationRecoveryFailureMessage,
   startDjSession
 } from "@/lib/session-service";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 type StartRouteProps = {
   params: Promise<{
@@ -53,8 +54,8 @@ export async function POST(_request: Request, { params }: StartRouteProps) {
     return NextResponse.json(
       {
         error:
-          failureReason === initialGenerationQueueFailureMessage
-            ? initialGenerationQueueFailureMessage
+          [initialGenerationQueueFailureMessage, initialGenerationRecoveryFailureMessage].includes(failureReason)
+            ? failureReason
             : "Could not start the session. Retry in a moment."
       },
       {

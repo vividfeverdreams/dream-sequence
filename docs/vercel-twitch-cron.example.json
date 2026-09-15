@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/twitch/process", "schedule": "* * * * *" }
+  ]
+}

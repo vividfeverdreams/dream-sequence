@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export async function POST() {
   return NextResponse.json(
     {
-      error: "OpenAI video webhooks are no longer used. Gemini Omni video jobs are reconciled through the Gemini Interactions API."
+      error: "This video webhook is retired. H3 Max jobs are reconciled through the fal.ai queue."
     },
     {
       status: 410

@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
 const nodeAvNativeTraceFiles = [
-  "./node_modules/.pnpm/@seydx+node-av-darwin-arm64@*/node_modules/@seydx/node-av-darwin-arm64/**/*",
-  "./node_modules/.pnpm/@seydx+node-av-darwin-x64@*/node_modules/@seydx/node-av-darwin-x64/**/*",
-  "./node_modules/.pnpm/@seydx+node-av-linux-arm64@*/node_modules/@seydx/node-av-linux-arm64/**/*",
-  "./node_modules/.pnpm/@seydx+node-av-linux-x64@*/node_modules/@seydx/node-av-linux-x64/**/*"
+  // node-av dynamically requires its optional platform dependency. Tracing the
+  // pnpm store alone omits the dependency alias Node actually resolves at runtime.
+  // Include only that alias to avoid packaging the large native binary twice.
+  "./node_modules/.pnpm/node-av@*/node_modules/@seydx/**/*"
 ];
 
 const nextConfig: NextConfig = {
@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/r/*": nodeAvNativeTraceFiles,
     "/api/twilio/inbound": nodeAvNativeTraceFiles,
+    "/api/twitch/webhook": nodeAvNativeTraceFiles,
+    "/api/twitch/process": nodeAvNativeTraceFiles,
     "/api/sessions/*/control": nodeAvNativeTraceFiles,
     "/api/sessions/*/reconcile": nodeAvNativeTraceFiles,
     "/api/sessions/*/start": nodeAvNativeTraceFiles,

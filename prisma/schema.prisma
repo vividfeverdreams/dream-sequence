@@ -18,6 +18,7 @@ model User {
   displayName  String
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  twitchConnection TwitchConnection?
   sessions     DJSession[]
   auditEvents  AuditEvent[]
 
@@ -43,8 +44,11 @@ model DJSession {
   venueSafeMode        Boolean            @default(true)
   artistControlEnabled Boolean            @default(true)
   autoSelectEnabled    Boolean            @default(true)
-  videoModel           String             @default("gemini_omni_flash")
-  videoDurationSeconds Int                @default(8)
+  videoModel           String             @default("h3_max")
+  videoDurationSeconds Int                @default(5)
+  videoResolution      String             @default("768P")
+  audienceMode         String             @default("web")
+  twitchChannel        String?
   startedAt            DateTime?
   stoppedAt            DateTime?
   createdAt            DateTime           @default(now())
@@ -207,5 +211,40 @@ model AuditEvent {
 
   @@index([sessionId, createdAt])
   @@index([type, createdAt])
+  @@schema("dream_sequence")
+}
+
+model TwitchConnection {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  twitchUserId          String   @unique
+  login                 String
+  displayName           String
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  tokenExpiresAt        DateTime
+  tokenValidatedAt      DateTime?
+  scopes                String
+  subscriptionId        String?
+  subscriptionStatus    String   @default("pending")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@schema("dream_sequence")
+}
+
+model TwitchEventDelivery {
+  id           String   @id
+  channelId    String
+  payload      String
+  status       String   @default("pending")
+  attempts     Int      @default(0)
+  receivedAt   DateTime @default(now())
+  processedAt  DateTime?
+  leaseUntil   DateTime?
+  lastError    String?
+
+  @@index([status, receivedAt])
   @@schema("dream_sequence")
 }

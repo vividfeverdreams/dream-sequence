@@ -10,7 +10,6 @@ import {
 } from "@/lib/playback-transition";
 import { hashValue, normalizePromptText } from "@/lib/utils";
 import {
-  completeGeminiVideoRender,
   failRenderJob,
   formatVideoModerationFailureReason,
   getVideoProviderFailureCode,
@@ -18,7 +17,6 @@ import {
   reconcileRenderJob,
   startVideoRender
 } from "@/lib/rendering";
-import { getEffectiveGeminiApiKeyForUser } from "@/lib/google-key-store";
 import {
   assessSubmissionImage,
   participantImageModerationBlockedReason,
@@ -40,14 +38,14 @@ import {
 } from "@/lib/submission-rate-limit-state";
 import {
   normalizeVideoDurationSecondsForModel,
-  normalizeVideoModelId
+  normalizeVideoModelId,
+  normalizeVideoResolution
 } from "@/lib/video-models";
-import { directVideoPrompt } from "@/lib/video-prompt-director";
 import { composeFinalProviderVideoPrompt } from "@/lib/video-prompt-budget";
 
 type IntakeInput = {
   sessionCode: string;
-  source: "sms" | "web";
+  source: "sms" | "web" | "twitch";
   prompt: string;
   sender?: string | null;
   senderFingerprintSeed: string;
@@ -56,7 +54,11 @@ type IntakeInput = {
   referenceImage?: ValidatedSubmissionImage | null;
 };
 
-export async function ingestSubmission(input: IntakeInput) {
+type IntakeOptions = {
+  scheduleSelection?: (sessionId: string) => void;
+};
+
+export async function ingestSubmission(input: IntakeInput, options: IntakeOptions = {}) {
   if (input.messageSid) {
     const existing = await db.promptSubmission.findUnique({
       where: {
@@ -67,7 +69,7 @@ export async function ingestSubmission(input: IntakeInput) {
     if (existing) {
       return {
         status: "approved" as const,
-        message: "That remix text is already in the mix.",
+        message: "That story idea is already in the queue.",
         submissionId: existing.id
       };
     }
@@ -111,6 +113,16 @@ export async function ingestSubmission(input: IntakeInput) {
 
   if (session.status !== "live") {
     throw new Error("This session is not live yet.");
+  }
+
+  if (session.audienceMode === "twitch" && input.source !== "twitch") {
+    throw new Error("This story takes ideas from Twitch chat. Use !next followed by your idea.");
+  }
+  if (session.audienceMode !== "twitch" && input.source === "twitch") {
+    throw new Error("This story takes ideas from its audience page.");
+  }
+  if (!input.prompt.trim() || input.prompt.trim().length > 1200) {
+    throw new Error("Story ideas must be between 1 and 1200 characters.");
   }
 
   const senderFingerprintSeed =
@@ -186,7 +198,8 @@ export async function ingestSubmission(input: IntakeInput) {
       ? await persistSubmissionImage(session.id, input.referenceImage)
       : null;
 
-  const submission = await db.promptSubmission.create({
+  const submission = await db.$transaction(async (tx: any) => {
+    const created = await tx.promptSubmission.create({
     data: {
       sessionId: session.id,
       source: input.source,
@@ -204,10 +217,9 @@ export async function ingestSubmission(input: IntakeInput) {
     }
   });
 
-  await db.$transaction(async (tx: any) => {
     await tx.moderationResult.create({
       data: {
-        submissionId: submission.id,
+        submissionId: created.id,
         decision,
         score: imageRejected ? 0 : assessment.score,
         flags: JSON.stringify(moderationFlags),
@@ -217,7 +229,7 @@ export async function ingestSubmission(input: IntakeInput) {
 
     await tx.rankingResult.create({
       data: {
-        submissionId: submission.id,
+        submissionId: created.id,
         score: imageRejected ? 0 : assessment.score,
         noveltyScore: imageRejected ? 0 : assessment.noveltyScore,
         cohesionScore: imageRejected ? 0 : assessment.cohesionScore,
@@ -229,21 +241,31 @@ export async function ingestSubmission(input: IntakeInput) {
 
     await tx.promptSubmission.update({
       where: {
-        id: submission.id
+        id: created.id
       },
       data: {
         status: decision === "approved" ? "approved" : "rejected",
         approvalReason
       }
     });
+    return created;
   });
 
-  await recordAuditEvent({
-    type: decision === "approved" ? "submission.approved" : "submission.rejected",
-    summary: `Processed ${input.source} submission`,
-    details: moderationExplanation,
-    sessionId: session.id
-  });
+  try {
+    await recordAuditEvent({
+      type: decision === "approved" ? "submission.approved" : "submission.rejected",
+      summary: `Processed ${input.source} submission`,
+      details: moderationExplanation,
+      sessionId: session.id
+    });
+  } catch {
+    // The receipt and moderation decision are already committed. An optional
+    // activity-log write must not make the audience retry a saved idea.
+    console.warn("[submission-intake] activity logging failed after receipt was saved", {
+      sessionId: session.id,
+      submissionId: submission.id
+    });
+  }
 
   if (imageRejected) {
     await recordAuditEvent({
@@ -275,7 +297,19 @@ export async function ingestSubmission(input: IntakeInput) {
   }
 
   if (decision === "approved") {
-    await attemptAutomatedSelection(session.id);
+    if (options.scheduleSelection) {
+      try {
+        options.scheduleSelection(session.id);
+      } catch {
+        // The saved idea remains eligible for the next reconciliation pass even
+        // when a response-bound background task could not be scheduled.
+        console.warn("[submission-intake] selection scheduling will retry", {
+          sessionId: session.id
+        });
+      }
+    } else {
+      await attemptAutomatedSelection(session.id);
+    }
   }
 
   return {
@@ -283,9 +317,9 @@ export async function ingestSubmission(input: IntakeInput) {
     message:
       decision === "approved"
         ? session.artistControlEnabled
-          ? "Your remix is in the mix. Venue-safe AI is scoring the queue now."
-          : "Your original remix is preserved in the queue. The video director will adapt only the private render instruction to the current clip."
-        : "That idea did not pass the venue-safe remix filter.",
+          ? "Your idea is in the story queue."
+          : "Your idea is in the story queue."
+        : "That idea did not pass the story safety check.",
     submissionId: submission.id
   };
 }
@@ -339,7 +373,7 @@ export async function attemptAutomatedSelection(sessionId: string) {
     return null;
   }
 
-  if (!session.autoSelectEnabled || session.playbackState.emergencyPaused) {
+  if (session.status !== "live" || !session.autoSelectEnabled || session.playbackState.emergencyPaused) {
     return null;
   }
 
@@ -459,7 +493,8 @@ export async function queueAutomatedRender(
         }
       });
 
-      if (!session?.playbackState) {
+      if (!session?.playbackState || session.status !== "live" ||
+          (requestedMode === "remix" && session.playbackState.emergencyPaused)) {
         return null;
       }
 
@@ -579,7 +614,7 @@ export async function queueAutomatedRender(
           sessionId,
           sourceSubmissionId: submissionId,
           kind: mode,
-          title: mode === "seed" ? "Seed Loop" : "DREAM SEQUENCE",
+          title: mode === "seed" ? "The story begins" : "What happens next",
           promptText,
           durationSeconds,
           status: "processing"
@@ -641,55 +676,16 @@ export async function queueAutomatedRender(
   } = queuedRender;
   const mode = requestedMode;
 
-  const geminiApiKey = session.userId
-    ? await getEffectiveGeminiApiKeyForUser(String(session.userId))
-    : null;
-  let directedPrompt = promptText;
-
-  if (mode === "remix" && sourceAsset?.publicUrl) {
-    const directed = await directVideoPrompt({
-      apiKey: geminiApiKey,
-      sessionId,
-      sourceAssetId: sourceAsset.id,
-      sourceVideoUrl: sourceAsset.publicUrl,
-      originalPrompt: session.basePrompt,
-      currentPrompt: sourceAsset.promptText,
-      incomingPrompt: sourceSubmission?.rawText?.trim() || promptText,
-      assessedPrompt: promptText,
-      videoModel,
-      session: {
-        artistName: session.artistName,
-        trackName: session.trackName,
-        creativeBible: session.creativeBible,
-        allowedMotifs: session.allowedMotifs,
-        bannedTerms: session.bannedTerms,
-        colorPalette: session.colorPalette,
-        motionRules: session.motionRules,
-        artistControlEnabled: session.artistControlEnabled,
-        venueSafeMode: session.venueSafeMode
-      }
-    });
-
-    directedPrompt = directed.prompt;
-  }
-
-  const includeArtistMotionRules =
-    mode === "seed" ||
-    submissionId === null ||
-    session.artistControlEnabled !== false;
-  const openingFrameImageUrl =
-    mode === "remix" ? sourceAsset?.thumbnailUrl ?? null : null;
-  const crowdReferenceImageUrl =
-    mode === "remix" ? sourceSubmission?.referenceImageUrl ?? null : null;
+  const creativePrompt = mode === "seed"
+    ? session.basePrompt
+    : [
+        `What happens next: ${sourceSubmission?.rawText?.trim() || promptText}`,
+        `Story opening (background only; do not restart): ${session.basePrompt}`
+      ].join(" ");
   const providerPrompt = composeFinalProviderVideoPrompt({
-    creativePrompt: directedPrompt,
-    motionRules: session.motionRules,
-    includeArtistMotionRules,
-    venueSafeMode: session.venueSafeMode !== false,
-    openingFrameAttached: Boolean(openingFrameImageUrl),
-    crowdReferenceAttached: Boolean(
-      openingFrameImageUrl && crowdReferenceImageUrl
-    )
+    creativePrompt,
+    includeArtistMotionRules: false,
+    openingFrameAttached: mode === "remix"
   });
 
   try {
@@ -736,14 +732,10 @@ export async function queueAutomatedRender(
     started = await startVideoRender({
       mode,
       prompt: providerPrompt,
-      sourceVideoId: sourceAsset?.sourceVideoId,
       sourceVideoUrl: sourceAsset?.publicUrl,
-      imageReferenceUrl: session.imageReferenceUrl,
-      openingFrameImageUrl,
-      remixReferenceImageUrl: crowdReferenceImageUrl,
-      runwayApiKey: env.runwayApiSecret,
-      geminiApiKey,
+      falApiKey: env.falApiKey,
       videoModel,
+      resolution: normalizeVideoResolution(session.videoResolution),
       durationSeconds
     });
   } catch (error) {
@@ -778,51 +770,49 @@ export async function queueAutomatedRender(
     return null;
   }
 
-  if (started.kind === "demo") {
-    const completionClaim = await db.renderJob.updateMany({
-      where: {
-        id: renderJob.id,
-        status: "queued",
-        providerRequestId: null
-      },
-      data: {
-        providerRequestId: started.videoId,
-        status: "queued",
-        failureReason: null
-      }
-    });
-
-    if (completionClaim.count !== 1) {
+  let startClaim = { count: 0 };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      // Retrying this database write is safe even if the previous write committed
+      // and only its response was lost. The provider generation is never repeated.
+      startClaim = await db.renderJob.updateMany({
+        where: {
+          id: renderJob.id,
+          status: "queued",
+          OR: [
+            { providerRequestId: null },
+            { providerRequestId: started.requestId }
+          ]
+        },
+        data: {
+          providerRequestId: started.requestId,
+          providerOutputUri: started.outputUri,
+          providerStrategy: started.strategy,
+          status: "queued",
+          failureReason: null
+        }
+      });
+      break;
+    } catch {
+      if (attempt < 2) continue;
+      console.error("[render-job] could not save the accepted fal request", {
+        renderJobId: renderJob.id,
+        providerRequestId: started.requestId
+      });
+      // The accepted request may still be rendering and billable. Do not select
+      // this same audience prompt again automatically if persistence stays down.
+      await failRenderJob(renderJob.id,
+        "fal.ai accepted this clip, but its request ID could not be saved. Check the fal.ai queue before retrying.",
+        { providerFailureCode: "FAL_SUBMISSION_UNKNOWN", retryAllowed: false }
+      ).catch(() => undefined);
       return null;
     }
-
-    await reconcileRenderJob(renderJob.id);
-    return renderJob;
   }
-
-  const startClaim = await db.renderJob.updateMany({
-    where: {
-      id: renderJob.id,
-      status: "queued",
-      providerRequestId: null
-    },
-    data: {
-      providerRequestId: started.requestId,
-      providerOutputUri: started.outputUri,
-      providerStrategy: started.strategy,
-      status: "queued",
-      failureReason: null
-    }
-  });
 
   // A late provider response must never resurrect a job that reconciliation or
   // moderation already made terminal.
   if (startClaim.count !== 1) {
     return null;
-  }
-
-  if (started.outputUri) {
-    await completeGeminiVideoRender(started.requestId, started.outputUri);
   }
 
   return renderJob;

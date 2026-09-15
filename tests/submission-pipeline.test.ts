@@ -6,6 +6,13 @@ const mocks = vi.hoisted(() => {
     findSession: vi.fn(),
     findSubmission: vi.fn(),
     findGenerationHead: vi.fn(),
+    createSubmission: vi.fn(),
+    updateSubmission: vi.fn(),
+    createModeration: vi.fn(),
+    createRanking: vi.fn(),
+    assessSubmission: vi.fn(),
+    checkSubmissionRateLimit: vi.fn(),
+    recordAuditEvent: vi.fn(),
     claimSession: vi.fn(),
     createAsset: vi.fn(),
     createJob: vi.fn(),
@@ -16,10 +23,8 @@ const mocks = vi.hoisted(() => {
     promoteOldestReadyAsset: vi.fn(),
     takePlaybackAsset: vi.fn(),
     reconcileRenderJob: vi.fn(),
-    completeGeminiVideoRender: vi.fn(),
     failRenderJob: vi.fn(),
-    startVideoRender: vi.fn(),
-    directVideoPrompt: vi.fn()
+    startVideoRender: vi.fn()
   };
   const transactionClient = {
     dJSession: {
@@ -28,8 +33,12 @@ const mocks = vi.hoisted(() => {
     },
     promptSubmission: {
       findUnique: values.findSubmission,
+      create: values.createSubmission,
+      update: values.updateSubmission,
       updateMany: values.claimSubmission
     },
+    moderationResult: { create: values.createModeration },
+    rankingResult: { create: values.createRanking },
     renderJob: {
       create: values.createJob,
       findFirst: values.findGenerationHead,
@@ -72,7 +81,6 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/rendering", () => ({
-  completeGeminiVideoRender: mocks.completeGeminiVideoRender,
   failRenderJob: mocks.failRenderJob,
   formatVideoModerationFailureReason: (message: string) => message,
   getVideoProviderFailureCode: () => null,
@@ -95,20 +103,21 @@ vi.mock("@/lib/playback-transition", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/google-key-store", () => ({
-  getEffectiveGeminiApiKeyForUser: vi.fn().mockResolvedValue("test-api-key")
-}));
-
 vi.mock("@/lib/audit", () => ({
-  recordAuditEvent: vi.fn()
+  recordAuditEvent: mocks.recordAuditEvent
 }));
 
-vi.mock("@/lib/video-prompt-director", () => ({
-  directVideoPrompt: mocks.directVideoPrompt
+vi.mock("@/lib/ai-assessment", () => ({
+  assessSubmission: mocks.assessSubmission
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  checkSubmissionRateLimit: mocks.checkSubmissionRateLimit
 }));
 
 import {
   attemptAutomatedSelection,
+  ingestSubmission,
   queueAutomatedRender,
   reconcilePendingRenderJobs
 } from "@/lib/submission-pipeline";
@@ -117,13 +126,93 @@ import {
   shouldRecoverReadyPlaybackAsset
 } from "@/lib/playback-transition";
 import {
-  providerArtistCameraPriorityRequirement,
   providerCameraContinuityRequirement,
-  providerCrowdReferenceRequirement,
   providerOpeningFrameContinuityRequirement,
-  providerSeamlessLoopRequirement,
-  providerVenueSafetyRequirement
+  providerSeamlessLoopRequirement
 } from "@/lib/video-prompt-budget";
+
+describe("submission receipt scheduling", () => {
+  const input = {
+    sessionCode: "STORY",
+    source: "twitch" as const,
+    prompt: "The fox discovers an underwater city.",
+    sender: "Viewer",
+    senderFingerprintSeed: "twitch:viewer-1"
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.findSession.mockResolvedValue({
+      id: "session-1", status: "live", audienceMode: "twitch",
+      artistControlEnabled: true, auditEvents: [], submissions: []
+    });
+    mocks.createSubmission.mockResolvedValue({ id: "submission-1" });
+    mocks.checkSubmissionRateLimit.mockResolvedValue({ allowed: true });
+    mocks.assessSubmission.mockResolvedValue({
+      decision: "approved", score: 90, flags: [], explanation: "Safe story idea.",
+      approvalReason: "Approved.", noveltyScore: 90, cohesionScore: 90, remixDeltaScore: 90,
+      winningPrompt: input.prompt
+    });
+  });
+
+  it("returns a persisted receipt without waiting for provider setup", async () => {
+    const scheduleSelection = vi.fn();
+    const result = await ingestSubmission(input, { scheduleSelection });
+
+    expect(result).toMatchObject({ status: "approved", submissionId: "submission-1" });
+    expect(mocks.updateSubmission).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "submission-1" }, data: expect.objectContaining({ status: "approved" })
+    }));
+    expect(scheduleSelection).toHaveBeenCalledTimes(1);
+    expect(scheduleSelection).toHaveBeenCalledWith("session-1");
+    expect(mocks.findSession).toHaveBeenCalledTimes(1);
+    expect(mocks.startVideoRender).not.toHaveBeenCalled();
+  });
+
+  it("keeps the receipt successful when scheduling fails after the idea is saved", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const result = await ingestSubmission(input, {
+        scheduleSelection: () => { throw new Error("Background task unavailable"); }
+      });
+      expect(result).toMatchObject({ status: "approved", submissionId: "submission-1" });
+      expect(warning).toHaveBeenCalledWith("[submission-intake] selection scheduling will retry", {
+        sessionId: "session-1"
+      });
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  it("does not schedule a rejected idea", async () => {
+    mocks.assessSubmission.mockResolvedValue({
+      decision: "rejected", score: 0, flags: ["blocked-term"], explanation: "Unsafe request.",
+      approvalReason: "Rejected.", noveltyScore: 0, cohesionScore: 0, remixDeltaScore: 0,
+      winningPrompt: input.prompt
+    });
+    const scheduleSelection = vi.fn();
+
+    expect(await ingestSubmission(input, { scheduleSelection })).toMatchObject({ status: "rejected" });
+    expect(scheduleSelection).not.toHaveBeenCalled();
+  });
+
+  it("returns the saved receipt and schedules rendering even if the activity log fails", async () => {
+    mocks.recordAuditEvent.mockRejectedValueOnce(new Error("Audit database unavailable"));
+    const scheduleSelection = vi.fn();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await ingestSubmission(input, { scheduleSelection })).toMatchObject({
+        status: "approved", submissionId: "submission-1"
+      });
+      expect(scheduleSelection).toHaveBeenCalledWith("session-1");
+      expect(warning).toHaveBeenCalledWith("[submission-intake] activity logging failed after receipt was saved", {
+        sessionId: "session-1", submissionId: "submission-1"
+      });
+    } finally {
+      warning.mockRestore();
+    }
+  });
+});
 
 describe("ready playback recovery", () => {
   it("preserves a freshly staged next asset for the show introduction", () => {
@@ -180,11 +269,6 @@ describe("submission render queue", () => {
     });
     mocks.updateJob.mockResolvedValue({});
     mocks.updateAsset.mockResolvedValue({});
-    mocks.directVideoPrompt.mockImplementation(async (input) => ({
-      prompt: input.assessedPrompt,
-      sourceAnalyzed: false,
-      fallbackReason: "test_fallback"
-    }));
     mocks.findGenerationHead.mockResolvedValue({
       outputAsset: {
         id: "asset-current",
@@ -194,6 +278,45 @@ describe("submission render queue", () => {
         status: "live"
       }
     });
+  });
+
+  function prepareAcceptedSeed() {
+    mocks.findSession.mockResolvedValue({
+      id: "session-1", status: "live", userId: "user-1", basePrompt: "A doorway opens.",
+      videoModel: "h3_max", videoDurationSeconds: 5, videoResolution: "480P",
+      playbackState: { currentAssetId: null }, renderJobs: [], visualAssets: []
+    });
+    mocks.createAsset.mockResolvedValue({ id: "asset-new" });
+    mocks.createJob.mockResolvedValue({ id: "render-new" });
+    mocks.startVideoRender.mockResolvedValue({ kind: "live", requestId: "fal-known-id", outputUri: null, strategy: "fal_text_to_video" });
+    mocks.failRenderJob.mockResolvedValue({ failed: true });
+  }
+
+  it("retries saving the same accepted request ID without submitting another billable clip", async () => {
+    prepareAcceptedSeed();
+    mocks.updateManyJobs.mockRejectedValueOnce(new Error("DB response lost")).mockResolvedValueOnce({ count: 1 });
+    expect(await queueAutomatedRender("session-1", null, "seed", "A doorway opens.")).toEqual({ id: "render-new" });
+    expect(mocks.startVideoRender).toHaveBeenCalledTimes(1);
+    expect(mocks.updateManyJobs).toHaveBeenCalledTimes(2);
+    expect(mocks.updateManyJobs.mock.calls[0][0]).toEqual(mocks.updateManyJobs.mock.calls[1][0]);
+    expect(mocks.updateManyJobs.mock.calls[1][0].where.OR).toContainEqual({ providerRequestId: "fal-known-id" });
+    expect(mocks.failRenderJob).not.toHaveBeenCalled();
+  });
+
+  it("suppresses automatic retry if an accepted provider ID cannot be saved", async () => {
+    prepareAcceptedSeed();
+    mocks.updateManyJobs.mockRejectedValue(new Error("DB unavailable"));
+    expect(await queueAutomatedRender("session-1", null, "seed", "A doorway opens.")).toBeNull();
+    expect(mocks.startVideoRender).toHaveBeenCalledTimes(1);
+    expect(mocks.updateManyJobs).toHaveBeenCalledTimes(3);
+    expect(mocks.failRenderJob).toHaveBeenCalledWith("render-new", expect.stringContaining("accepted this clip"), { providerFailureCode: "FAL_SUBMISSION_UNKNOWN", retryAllowed: false });
+  });
+
+  it.each([{ status: "stopped", emergencyPaused: false }, { status: "live", emergencyPaused: true }])("does not generate if the story stops or pauses during selection: %j", async ({ status, emergencyPaused }) => {
+    prepareAcceptedSeed();
+    mocks.findSession.mockResolvedValue({ id: "session-1", status, playbackState: { emergencyPaused }, renderJobs: [], visualAssets: [] });
+    expect(await queueAutomatedRender("session-1", "submission-1", "remix", "Continue")).toBeNull();
+    expect(mocks.startVideoRender).not.toHaveBeenCalled();
   });
 
   it("selects the next approved prompt after a render frees the slot", async () => {
@@ -211,6 +334,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         autoSelectEnabled: true,
         playbackState: {
           currentAssetId: "asset-current",
@@ -233,8 +359,11 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         imageReferenceUrl: null,
-        videoModel: "seedance2",
+        videoModel: "h3_max",
         videoDurationSeconds: 6,
         playbackState: {
           currentAssetId: "asset-current",
@@ -252,7 +381,7 @@ describe("submission render queue", () => {
       kind: "live",
       requestId: "request-next",
       outputUri: "https://example.com/generated.mp4",
-      strategy: "stateful_edit"
+      strategy: "fal_h3_max_image_to_video"
     });
     mocks.updateJob.mockResolvedValue({});
 
@@ -288,15 +417,11 @@ describe("submission render queue", () => {
       expect.objectContaining({
         mode: "remix",
         prompt: expect.stringContaining("Compiled private model prompt"),
-        remixReferenceImageUrl: "https://example.com/reference.jpg",
-        videoModel: "seedance2",
+        videoModel: "h3_max",
         durationSeconds: 6
       })
     );
-    expect(mocks.completeGeminiVideoRender).toHaveBeenCalledWith(
-      "request-next",
-      "https://example.com/generated.mp4"
-    );
+
   });
 
   it("renders an approved prompt while an archived rotation clip occupies the next slot", async () => {
@@ -304,6 +429,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         autoSelectEnabled: true,
         playbackState: {
           currentAssetId: "asset-current",
@@ -325,6 +453,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         imageReferenceUrl: null,
         videoDurationSeconds: 8,
         playbackState: {
@@ -343,7 +474,7 @@ describe("submission render queue", () => {
       kind: "live",
       requestId: "request-new",
       outputUri: null,
-      strategy: "stateful_edit"
+      strategy: "fal_h3_max_image_to_video"
     });
     mocks.updateJob.mockResolvedValue({});
 
@@ -374,7 +505,7 @@ describe("submission render queue", () => {
       expect.objectContaining({
         mode: "remix",
         prompt: expect.stringContaining("A fresh audience remix"),
-        sourceVideoId: "file_current"
+        sourceVideoUrl: "https://example.com/current.mp4"
       })
     );
   });
@@ -392,6 +523,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         autoSelectEnabled: true,
         playbackState: {
           currentAssetId: "asset-original",
@@ -413,6 +547,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         imageReferenceUrl: null,
         videoDurationSeconds: 4,
         playbackState: {
@@ -431,7 +568,7 @@ describe("submission render queue", () => {
       kind: "live",
       requestId: "v1_remix-3",
       outputUri: null,
-      strategy: "stateful_edit"
+      strategy: "fal_h3_max_image_to_video"
     });
 
     await attemptAutomatedSelection("session-1");
@@ -470,350 +607,93 @@ describe("submission render queue", () => {
     });
     expect(mocks.startVideoRender).toHaveBeenCalledWith(
       expect.objectContaining({
-        durationSeconds: 4,
+        durationSeconds: 5,
         mode: "remix",
-        sourceVideoId: "v1_remix-2",
         sourceVideoUrl: "https://example.com/remix-2.mp4"
       })
     );
   });
 
-  it("budgets a 900-character directed prompt and persists exactly what it dispatches", async () => {
-    const directedPrompt =
-      `Keep the crowd-requested locked static camera. ${"D".repeat(900)}`.slice(
-        0,
-        900
-      );
-    mocks.findGenerationHead.mockResolvedValue({
-      outputAsset: {
-        id: "asset-remix-2",
-        promptText: "Current chrome canyon prompt",
-        sourceVideoId: "v1_remix-2",
-        publicUrl: "https://example.com/remix-2.mp4",
-        thumbnailUrl: "https://example.com/remix-2-closing-frame.jpg",
-        status: "archived"
-      }
-    });
+  it("preserves a full audience story idea and persists exactly what H3 Max receives", async () => {
+    const rawPrompt = `She opens the door and finds a city inside a star. ${"A".repeat(1100)}`;
+    const opening = "An astronaut finds a door in a desert.";
     mocks.findSession.mockResolvedValue({
-      id: "session-1",
-      userId: "user-1",
-      updatedAt: new Date("2026-08-19T10:00:00.000Z"),
-      artistName: "Neon Echo",
-      trackName: "Skyline Pressure",
-      creativeBible: "Reflective dream architecture",
-      allowedMotifs: "prisms",
-      bannedTerms: "logos",
-      colorPalette: "cobalt and ember",
-      motionRules: "fast clockwise orbit despite conflicting crowd camera direction",
-      artistControlEnabled: true,
-      venueSafeMode: true,
-      basePrompt: "An endless mirrored desert",
-      imageReferenceUrl: null,
-      videoModel: "seedance2",
-      videoDurationSeconds: 8,
-      playbackState: {
-        currentAssetId: "asset-older-live",
-        nextAssetId: null,
-        currentAsset: null
-      },
-      renderJobs: [],
-      visualAssets: []
+      id: "session-1", userId: "user-1", status: "live", updatedAt: new Date(),
+      basePrompt: opening, videoModel: "h3_max", videoDurationSeconds: 10, videoResolution: "1080P",
+      motionRules: "OBSOLETE_CAMERA_RULE", venueSafeMode: true,
+      playbackState: { currentAssetId: "asset-current", nextAssetId: null }, renderJobs: [], visualAssets: []
     });
-    mocks.findSubmission.mockResolvedValue({
-      rawText: "Make it bloom into paper planets",
-      referenceImageUrl: "https://example.com/crowd-photo.jpg"
-    });
-    mocks.createAsset.mockResolvedValue({ id: "asset-remix-3" });
-    mocks.createJob.mockResolvedValue({ id: "render-remix-3" });
-    mocks.directVideoPrompt.mockResolvedValue({
-      prompt: directedPrompt,
-      sourceAnalyzed: true,
-      fallbackReason: null
-    });
-    mocks.startVideoRender.mockResolvedValue({
-      kind: "live",
-      requestId: "seedance-request-3",
-      outputUri: null,
-      strategy: "runway_video_to_video"
-    });
+    mocks.findSubmission.mockResolvedValue({ rawText: rawPrompt });
+    mocks.createAsset.mockResolvedValue({ id: "asset-next" });
+    mocks.createJob.mockResolvedValue({ id: "render-next" });
+    mocks.startVideoRender.mockResolvedValue({ kind: "live", requestId: "request-next", outputUri: null, strategy: "fal_h3_max_image_to_video" });
 
-    await queueAutomatedRender(
-      "session-1",
-      "submission-3",
-      "remix",
-      "Assessed paper-planet transformation"
-    );
+    await queueAutomatedRender("session-1", "submission-next", "remix", "A shortened assessment should not replace the story");
 
-    expect(mocks.directVideoPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        apiKey: "test-api-key",
-        sourceAssetId: "asset-remix-2",
-        sourceVideoUrl: "https://example.com/remix-2.mp4",
-        originalPrompt: "An endless mirrored desert",
-        currentPrompt: "Current chrome canyon prompt",
-        incomingPrompt: "Make it bloom into paper planets",
-        assessedPrompt: "Assessed paper-planet transformation",
-        videoModel: "seedance2"
-      })
-    );
-    const finalProviderPrompt = (
-      mocks.startVideoRender.mock.calls[0]?.[0] as { prompt: string }
-    ).prompt;
-
-    expect(directedPrompt).toHaveLength(900);
-    expect(
-      finalProviderPrompt.startsWith(
-        providerOpeningFrameContinuityRequirement
-      )
-    ).toBe(true);
-    expect(finalProviderPrompt).toContain(providerCrowdReferenceRequirement);
-    expect(finalProviderPrompt).toContain("crowd-requested locked static camera");
-    expect(finalProviderPrompt).toContain(
-      "fast clockwise orbit despite conflicting crowd camera direction"
-    );
-    expect(finalProviderPrompt).toContain(
-      providerArtistCameraPriorityRequirement
-    );
+    const finalProviderPrompt = mocks.startVideoRender.mock.calls[0][0].prompt as string;
+    expect(finalProviderPrompt).toContain(rawPrompt);
+    expect(finalProviderPrompt).toContain(opening);
+    expect(finalProviderPrompt).toContain("Story opening (background only; do not restart)");
+    expect(finalProviderPrompt).toContain(providerOpeningFrameContinuityRequirement);
     expect(finalProviderPrompt).toContain(providerSeamlessLoopRequirement);
-    expect(finalProviderPrompt).toContain(providerVenueSafetyRequirement);
-    expect(finalProviderPrompt.length).toBeLessThanOrEqual(1_000);
-    expect(mocks.updateJob).toHaveBeenCalledWith({
-      where: {
-        id: "render-remix-3"
-      },
-      data: {
-        promptText: finalProviderPrompt
-      }
-    });
-    expect(mocks.updateAsset).toHaveBeenCalledWith({
-      where: {
-        id: "asset-remix-3"
-      },
-      data: {
-        promptText: finalProviderPrompt
-      }
-    });
-    expect(mocks.startVideoRender).toHaveBeenCalledWith(
-      expect.objectContaining({
-        openingFrameImageUrl:
-          "https://example.com/remix-2-closing-frame.jpg",
-        remixReferenceImageUrl: "https://example.com/crowd-photo.jpg",
-        prompt: finalProviderPrompt
-      })
-    );
+    expect(finalProviderPrompt).toContain("do not loop back");
+    expect(finalProviderPrompt).not.toContain("Venue-safe:");
+    expect(finalProviderPrompt).not.toContain("OBSOLETE_CAMERA_RULE");
+    expect(finalProviderPrompt).not.toContain("A shortened assessment");
+    expect(finalProviderPrompt.length).toBeLessThanOrEqual(3000);
+    expect(mocks.updateJob).toHaveBeenCalledWith({ where: { id: "render-next" }, data: { promptText: finalProviderPrompt } });
+    expect(mocks.updateAsset).toHaveBeenCalledWith({ where: { id: "asset-next" }, data: { promptText: finalProviderPrompt } });
+    expect(mocks.startVideoRender).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "remix", videoModel: "h3_max", resolution: "1080P", durationSeconds: 10,
+      sourceVideoUrl: "https://example.com/current.mp4", prompt: finalProviderPrompt
+    }));
+    expect(mocks.startVideoRender.mock.calls[0][0]).not.toHaveProperty("remixReferenceImageUrl");
   });
 
-  it("adds artist camera rules to a long seed without imposing a venue clause when disabled", async () => {
-    const motionRules =
-      "Locked-off static camera for the whole clip; pulse only the prism lighting";
+  it("uses the opening story for the first scene without a rewrite or legacy camera rules", async () => {
+    const opening = "A prismatic city made from liquid mirrors. ".repeat(25);
     mocks.findSession.mockResolvedValue({
-      id: "session-seed",
-      userId: "user-1",
-      updatedAt: new Date("2026-08-19T11:00:00.000Z"),
-      motionRules,
-      artistControlEnabled: false,
-      venueSafeMode: false,
-      imageReferenceUrl: null,
-      videoModel: "seedance2",
-      videoDurationSeconds: 8,
-      playbackState: {
-        currentAssetId: null,
-        nextAssetId: null,
-        currentAsset: null
-      },
-      renderJobs: [],
-      visualAssets: []
+      id: "session-1", userId: "user-1", status: "live", updatedAt: new Date(),
+      basePrompt: opening, videoModel: "h3_max", videoDurationSeconds: 5, videoResolution: "480P",
+      motionRules: "OBSOLETE_CAMERA_RULE", venueSafeMode: false,
+      playbackState: { currentAssetId: null, nextAssetId: null }, renderJobs: [], visualAssets: []
     });
     mocks.createAsset.mockResolvedValue({ id: "asset-seed" });
     mocks.createJob.mockResolvedValue({ id: "render-seed" });
-    mocks.startVideoRender.mockResolvedValue({
-      kind: "live",
-      requestId: "seed-request",
-      outputUri: null,
-      strategy: "runway_text_to_video"
-    });
+    mocks.startVideoRender.mockResolvedValue({ kind: "live", requestId: "request-seed", outputUri: null, strategy: "fal_h3_max_image_to_video" });
 
-    await queueAutomatedRender(
-      "session-seed",
-      null,
-      "seed",
-      "A prismatic city made from liquid mirrors. ".repeat(40)
-    );
+    await queueAutomatedRender("session-1", null, "seed", "A stale legacy draft");
 
-    const finalProviderPrompt = (
-      mocks.startVideoRender.mock.calls[0]?.[0] as { prompt: string }
-    ).prompt;
-
-    expect(mocks.directVideoPrompt).not.toHaveBeenCalled();
+    const prompt = mocks.startVideoRender.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain(opening.trim());
+    expect(prompt).not.toContain("A stale legacy draft");
+    expect(prompt).not.toContain("OBSOLETE_CAMERA_RULE");
+    expect(prompt).not.toContain("Venue-safe:");
+    expect(prompt).toContain(providerSeamlessLoopRequirement);
     expect(mocks.findGenerationHead).not.toHaveBeenCalled();
     expect(mocks.findSubmission).not.toHaveBeenCalled();
     expect(mocks.claimSubmission).not.toHaveBeenCalled();
-    expect(finalProviderPrompt).toContain(motionRules);
-    expect(finalProviderPrompt).toContain(providerSeamlessLoopRequirement);
-    expect(finalProviderPrompt).toContain("leave it unrestricted");
-    expect(finalProviderPrompt).not.toContain(providerVenueSafetyRequirement);
-    expect(finalProviderPrompt.length).toBeLessThanOrEqual(1_000);
-    expect(mocks.updateJob).toHaveBeenCalledWith({
-      where: { id: "render-seed" },
-      data: { promptText: finalProviderPrompt }
-    });
-    expect(mocks.updateAsset).toHaveBeenCalledWith({
-      where: { id: "asset-seed" },
-      data: { promptText: finalProviderPrompt }
-    });
+    expect(mocks.startVideoRender).toHaveBeenCalledWith(expect.objectContaining({ resolution: "480P", durationSeconds: 5 }));
   });
 
-  it("keeps artist motion rules for a manual fallback even when artist control is off", async () => {
-    const motionRules = "Rapid crane rises with a snap zoom on every downbeat";
-    mocks.findGenerationHead.mockResolvedValue({
-      outputAsset: {
-        id: "asset-live",
-        promptText: "Current source prompt",
-        sourceVideoId: "v1_live",
-        publicUrl: "https://example.com/live.mp4",
-        status: "live"
-      }
-    });
+  it("uses the host continuation directly when generating without an audience submission", async () => {
     mocks.findSession.mockResolvedValue({
-      id: "session-manual",
-      userId: "user-1",
-      updatedAt: new Date("2026-08-19T11:10:00.000Z"),
-      artistName: "Neon Echo",
-      trackName: "Skyline Pressure",
-      creativeBible: "Reflective dream architecture",
-      allowedMotifs: "prisms",
-      bannedTerms: "logos",
-      colorPalette: "cobalt and ember",
-      motionRules,
-      basePrompt: "An endless mirrored desert",
-      artistControlEnabled: false,
-      venueSafeMode: true,
-      imageReferenceUrl: null,
-      videoModel: "seedance2",
-      videoDurationSeconds: 8,
-      playbackState: {
-        currentAssetId: "asset-live",
-        nextAssetId: null,
-        currentAsset: null
-      },
-      renderJobs: [],
-      visualAssets: []
+      id: "session-1", userId: "user-1", status: "live", updatedAt: new Date(),
+      basePrompt: "An astronaut finds a door in a desert.", videoModel: "h3_max", videoDurationSeconds: 8,
+      venueSafeMode: true, playbackState: { currentAssetId: "asset-current", nextAssetId: null }, renderJobs: [], visualAssets: []
     });
-    mocks.createAsset.mockResolvedValue({ id: "asset-manual" });
-    mocks.createJob.mockResolvedValue({ id: "render-manual" });
-    mocks.startVideoRender.mockResolvedValue({
-      kind: "live",
-      requestId: "manual-request",
-      outputUri: null,
-      strategy: "runway_video_to_video"
-    });
+    mocks.createAsset.mockResolvedValue({ id: "asset-next" });
+    mocks.createJob.mockResolvedValue({ id: "render-next" });
+    mocks.startVideoRender.mockResolvedValue({ kind: "live", requestId: "request-next", outputUri: null, strategy: "fal_h3_max_image_to_video" });
 
-    await queueAutomatedRender(
-      "session-manual",
-      null,
-      "remix",
-      "Shift the active loop into an ember prism cathedral"
-    );
+    await queueAutomatedRender("session-1", null, "remix", "The door opens into an ember cathedral");
 
-    const finalProviderPrompt = (
-      mocks.startVideoRender.mock.calls[0]?.[0] as { prompt: string }
-    ).prompt;
-
+    const prompt = mocks.startVideoRender.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain("What happens next: The door opens into an ember cathedral");
+    expect(prompt).toContain(providerOpeningFrameContinuityRequirement);
+    expect(prompt).toContain(providerCameraContinuityRequirement);
     expect(mocks.findSubmission).not.toHaveBeenCalled();
     expect(mocks.claimSubmission).not.toHaveBeenCalled();
-    expect(mocks.directVideoPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        incomingPrompt: "Shift the active loop into an ember prism cathedral"
-      })
-    );
-    expect(finalProviderPrompt).toContain(motionRules);
-    expect(finalProviderPrompt).toContain(
-      providerArtistCameraPriorityRequirement
-    );
-    expect(finalProviderPrompt).toContain(providerVenueSafetyRequirement);
-    expect(finalProviderPrompt.length).toBeLessThanOrEqual(1_000);
-  });
-
-  it("omits session motion rules for a raw audience remix while preserving audience camera direction", async () => {
-    const artistRuleSentinel = "ARTIST_LOCKED_CAMERA_SENTINEL";
-    mocks.findGenerationHead.mockResolvedValue({
-      outputAsset: {
-        id: "asset-raw-source",
-        promptText: "Current source prompt",
-        sourceVideoId: "v1_raw_source",
-        publicUrl: "https://example.com/raw-source.mp4",
-        status: "live"
-      }
-    });
-    mocks.findSession.mockResolvedValue({
-      id: "session-raw",
-      userId: "user-1",
-      updatedAt: new Date("2026-08-19T11:20:00.000Z"),
-      artistName: "Neon Echo",
-      trackName: "Skyline Pressure",
-      creativeBible: "Reflective dream architecture",
-      allowedMotifs: "prisms",
-      bannedTerms: "logos",
-      colorPalette: "cobalt and ember",
-      motionRules: artistRuleSentinel,
-      basePrompt: "An endless mirrored desert",
-      artistControlEnabled: false,
-      venueSafeMode: false,
-      imageReferenceUrl: null,
-      videoModel: "seedance2",
-      videoDurationSeconds: 8,
-      playbackState: {
-        currentAssetId: "asset-raw-source",
-        nextAssetId: null,
-        currentAsset: null
-      },
-      renderJobs: [],
-      visualAssets: []
-    });
-    mocks.findSubmission.mockResolvedValue({
-      rawText: "Use a fast clockwise audience-requested orbit",
-      referenceImageUrl: null
-    });
-    mocks.createAsset.mockResolvedValue({ id: "asset-raw" });
-    mocks.createJob.mockResolvedValue({ id: "render-raw" });
-    mocks.directVideoPrompt.mockResolvedValue({
-      prompt: "Use a fast clockwise audience-requested orbit through the chrome canyon",
-      sourceAnalyzed: true,
-      fallbackReason: null
-    });
-    mocks.startVideoRender.mockResolvedValue({
-      kind: "live",
-      requestId: "raw-request",
-      outputUri: null,
-      strategy: "runway_video_to_video"
-    });
-
-    await queueAutomatedRender(
-      "session-raw",
-      "submission-raw",
-      "remix",
-      "Use a fast clockwise audience-requested orbit"
-    );
-
-    const finalProviderPrompt = (
-      mocks.startVideoRender.mock.calls[0]?.[0] as { prompt: string }
-    ).prompt;
-
-    expect(finalProviderPrompt).toContain("fast clockwise audience-requested orbit");
-    expect(finalProviderPrompt).not.toContain(artistRuleSentinel);
-    expect(finalProviderPrompt).not.toContain("Enabled artist motion/camera rules");
-    expect(finalProviderPrompt).toContain(providerCameraContinuityRequirement);
-    expect(finalProviderPrompt).toContain(providerSeamlessLoopRequirement);
-    expect(finalProviderPrompt).not.toContain(providerVenueSafetyRequirement);
-    expect(finalProviderPrompt.length).toBeLessThanOrEqual(1_000);
-    expect(mocks.updateJob).toHaveBeenCalledWith({
-      where: { id: "render-raw" },
-      data: { promptText: finalProviderPrompt }
-    });
-    expect(mocks.updateAsset).toHaveBeenCalledWith({
-      where: { id: "asset-raw" },
-      data: { promptText: finalProviderPrompt }
-    });
   });
 
   it("fails closed when final prompt persistence transiently fails", async () => {
@@ -830,6 +710,8 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      videoResolution: "1080P",
       updatedAt: new Date("2026-08-19T10:00:00.000Z"),
       artistName: "Neon Echo",
       trackName: "Skyline Pressure",
@@ -840,7 +722,7 @@ describe("submission render queue", () => {
       motionRules: "clockwise orbit",
       basePrompt: "An endless mirrored desert",
       imageReferenceUrl: null,
-      videoModel: "seedance2",
+      videoModel: "h3_max",
       videoDurationSeconds: 8,
       playbackState: {
         currentAssetId: "asset-remix-2",
@@ -852,17 +734,12 @@ describe("submission render queue", () => {
     });
     mocks.createAsset.mockResolvedValue({ id: "asset-remix-3" });
     mocks.createJob.mockResolvedValue({ id: "render-remix-3" });
-    mocks.directVideoPrompt.mockResolvedValue({
-      prompt: "Analyzed continuation through the chrome canyon",
-      sourceAnalyzed: true,
-      fallbackReason: null
-    });
     mocks.updateJob.mockRejectedValueOnce(new Error("transient database error"));
     mocks.startVideoRender.mockResolvedValue({
       kind: "live",
       requestId: "seedance-request-3",
       outputUri: null,
-      strategy: "runway_video_to_video"
+      strategy: "fal_h3_max_image_to_video"
     });
 
     await expect(
@@ -888,7 +765,7 @@ describe("submission render queue", () => {
     warn.mockRestore();
   });
 
-  it("never revives a render that became terminal before Gemini returned", async () => {
+  it("never revives a render that became terminal before fal returned", async () => {
     mocks.findGenerationHead.mockResolvedValue({
       outputAsset: {
         id: "asset-remix-1",
@@ -900,6 +777,9 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
       imageReferenceUrl: null,
       videoDurationSeconds: 8,
       playbackState: {
@@ -919,7 +799,7 @@ describe("submission render queue", () => {
       kind: "live",
       requestId: "v1_remix-2",
       outputUri: "https://example.com/remix-2.mp4",
-      strategy: "stateful_edit"
+      strategy: "fal_h3_max_image_to_video"
     });
     mocks.updateManyJobs.mockResolvedValue({
       count: 0
@@ -938,20 +818,19 @@ describe("submission render queue", () => {
       where: {
         id: "render-remix-2",
         status: "queued",
-        providerRequestId: null
+        OR: [{ providerRequestId: null }, { providerRequestId: "v1_remix-2" }]
       },
       data: {
         providerRequestId: "v1_remix-2",
         providerOutputUri: "https://example.com/remix-2.mp4",
-        providerStrategy: "stateful_edit",
+        providerStrategy: "fal_h3_max_image_to_video",
         status: "queued",
         failureReason: null
       }
     });
-    expect(mocks.completeGeminiVideoRender).not.toHaveBeenCalled();
     expect(mocks.startVideoRender).toHaveBeenCalledWith(
       expect.objectContaining({
-        videoModel: "gemini_omni_flash"
+        videoModel: "h3_max"
       })
     );
   });
@@ -960,9 +839,12 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      videoResolution: "1080P",
       updatedAt: new Date("2026-08-14T12:00:00.000Z"),
       imageReferenceUrl: null,
-      videoModel: "hailuo3",
+      videoModel: "h3_max",
+      basePrompt: "An astronaut finds a door in a desert.",
       videoDurationSeconds: 4,
       playbackState: {
         currentAssetId: null,
@@ -973,14 +855,14 @@ describe("submission render queue", () => {
       visualAssets: []
     });
     mocks.createAsset.mockResolvedValue({
-      id: "asset-hailuo-seed"
+      id: "asset-h3-seed"
     });
     mocks.createJob.mockResolvedValue({
-      id: "render-hailuo-seed"
+      id: "render-h3-seed"
     });
     mocks.startVideoRender.mockResolvedValue({
       kind: "live",
-      requestId: "hailuo-request",
+      requestId: "h3-request",
       outputUri: null,
       strategy: "text_to_video"
     });
@@ -990,21 +872,21 @@ describe("submission render queue", () => {
         "session-1",
         null,
         "seed",
-        "Shape an iridescent Hailuo seed"
+        "Shape an iridescent H3 seed"
       )
     ).resolves.toEqual({
-      id: "render-hailuo-seed"
+      id: "render-h3-seed"
     });
 
     expect(mocks.createAsset).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        durationSeconds: 8
+        durationSeconds: 5
       })
     });
     expect(mocks.startVideoRender).toHaveBeenCalledWith(
       expect.objectContaining({
-        videoModel: "hailuo3",
-        durationSeconds: 8
+        videoModel: "h3_max",
+        durationSeconds: 5
       })
     );
   });
@@ -1014,6 +896,9 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
       updatedAt,
       imageReferenceUrl: null,
       videoDurationSeconds: 8,
@@ -1050,7 +935,7 @@ describe("submission render queue", () => {
       kind: "live",
       requestId: "v1_remix-2",
       outputUri: null,
-      strategy: "stateful_edit"
+      strategy: "fal_h3_max_image_to_video"
     });
 
     const results = await Promise.all([
@@ -1086,6 +971,8 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      videoResolution: "1080P",
       updatedAt: new Date("2026-07-29T04:00:00.000Z"),
       imageReferenceUrl: null,
       videoDurationSeconds: 8,
@@ -1128,6 +1015,8 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      videoResolution: "1080P",
       updatedAt: new Date("2026-07-29T04:00:00.000Z"),
       imageReferenceUrl: null,
       videoDurationSeconds: 8,
@@ -1177,6 +1066,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         autoSelectEnabled: true,
         playbackState: {
           currentAssetId: "asset-current",
@@ -1202,6 +1094,9 @@ describe("submission render queue", () => {
       .mockResolvedValueOnce({
         id: "session-1",
         userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
         updatedAt: new Date("2026-07-29T17:54:00.000Z"),
         videoDurationSeconds: 4,
         playbackState: {
@@ -1230,7 +1125,7 @@ describe("submission render queue", () => {
       kind: "live",
       requestId: "request-next",
       outputUri: null,
-      strategy: "stateful_edit"
+      strategy: "fal_h3_max_image_to_video"
     });
 
     await expect(attemptAutomatedSelection("session-1")).resolves.toMatchObject({
@@ -1262,6 +1157,9 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
       autoSelectEnabled: true,
       playbackState: {
         currentAssetId: "asset-current",
@@ -1298,6 +1196,9 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
       autoSelectEnabled: true,
       playbackState: {
         currentAssetId: "asset-current",
@@ -1324,6 +1225,9 @@ describe("submission render queue", () => {
     mocks.findSession.mockResolvedValue({
       id: "session-1",
       userId: "user-1",
+      status: "live",
+      basePrompt: "An astronaut finds a door in a desert.",
+      videoResolution: "1080P",
       autoSelectEnabled: true,
       playbackState: {
         currentAssetId: "asset-manual",

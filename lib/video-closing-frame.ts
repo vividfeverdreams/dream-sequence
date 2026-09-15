@@ -1,5 +1,22 @@
 import type { Frame } from "node-av/lib";
 
+export async function readVideoMetadata(video: Buffer) {
+  const { Demuxer } = await import("node-av/api");
+  const input = await Demuxer.open(video);
+  try {
+    const stream = input.video();
+    const width = stream?.codecpar.width;
+    const height = stream?.codecpar.height;
+    const duration = input.duration;
+    if (!width || !height || !Number.isFinite(duration) || duration <= 0) {
+      throw new Error("The completed clip has invalid video dimensions or duration.");
+    }
+    return { width, height, durationSeconds: Math.round(duration) };
+  } finally {
+    await input.close();
+  }
+}
+
 /**
  * Decode the complete short render so B-frames are flushed, retain only the
  * final decoded frame, and encode that frame as a provider-ready JPEG.

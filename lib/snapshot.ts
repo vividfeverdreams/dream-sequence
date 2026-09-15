@@ -1,5 +1,6 @@
 import type { PromptSubmission, RankingResult, RenderJob, VisualAsset } from "@prisma/client";
 import { db } from "@/lib/db";
+import { canRecoverSeedRender, recoverableSeedFailureMessage } from "@/lib/seed-render-recovery";
 import { estimateVideoRenderProgress } from "@/lib/render-progress";
 import {
   getStoredRenderProgress,
@@ -84,6 +85,11 @@ export async function getSessionSnapshot(sessionId: string) {
           promptText: true,
           failureReason: true,
           providerFailureCode: true,
+          submissionId: true,
+          providerStrategy: true,
+          providerRequestId: true,
+          providerOutputUri: true,
+          outputAsset: { select: { status: true } },
           createdAt: true
         },
         orderBy: {
@@ -137,7 +143,9 @@ export async function getSessionSnapshot(sessionId: string) {
   const queuedRender = session.renderJobs.find((job: any) => job.status === "queued" || job.status === "in_progress");
   const { auditEvents: showOverlayEvents, ...snapshotSession } = session;
   const showOverlaySettings = getShowOverlaySettings(showOverlayEvents);
+  const latestSeedId = snapshotSession.renderJobs.find((job) => job.mode === "seed")?.id;
   const renderJobs = snapshotSession.renderJobs.map((job) => {
+    const canRecover = job.id === latestSeedId && canRecoverSeedRender(job);
     const storedProgress = getStoredRenderProgress(showOverlayEvents, job.id);
     const progress =
       job.status === "queued" || job.status === "in_progress"
@@ -153,7 +161,10 @@ export async function getSessionSnapshot(sessionId: string) {
       mode: job.mode,
       status: job.status,
       promptText: job.promptText,
-      failureReason: isVideoModerationFailureReason(job.failureReason)
+      canRecover,
+      failureReason: canRecover
+        ? recoverableSeedFailureMessage
+        : isVideoModerationFailureReason(job.failureReason)
         ? videoModerationBlockedReason
         : job.status === "failed" && job.failureReason
           ? videoProviderFailureReason
@@ -237,7 +248,7 @@ function serializeClientSourceSubmission(submission: ClientSourceSubmission | nu
 
   return {
     rawText: submission.rawText,
-    sender: submission.source === "web" ? submission.sender : null,
+    sender: ["web", "twitch"].includes(submission.source) ? submission.sender : null,
     source: submission.source,
     referenceImageUrl: submission.referenceImageUrl
   };
@@ -264,7 +275,7 @@ function serializeClientSubmission(submission: ClientSubmission) {
   return {
     id: submission.id,
     source: submission.source,
-    sender: submission.source === "web" ? submission.sender : null,
+    sender: ["web", "twitch"].includes(submission.source) ? submission.sender : null,
     rawText: submission.rawText,
     referenceImageUrl: submission.referenceImageUrl,
     status: submission.status,

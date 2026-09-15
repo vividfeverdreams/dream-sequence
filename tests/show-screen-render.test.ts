@@ -224,3 +224,86 @@ describe("show screen video presentation", () => {
     expect(markup).toContain("width:42%");
   });
 });
+
+describe("show screen opening generation failure", () => {
+  function openingSnapshot({
+    retryStatus,
+    hasPlayingClip = false
+  }: {
+    retryStatus?: "queued" | "in_progress" | "completed";
+    hasPlayingClip?: boolean;
+  } = {}) {
+    const asset = hasPlayingClip ? {
+      id: "asset-playing",
+      kind: "seed",
+      title: "The story begins",
+      promptText: "A fox discovers a glowing door",
+      publicUrl: "/opening.mp4",
+      status: "live",
+      createdAt: new Date("2026-09-13T00:00:00.000Z"),
+      sourceSubmission: null
+    } : null;
+    const failedSeed = {
+      id: "seed-failed",
+      mode: "seed",
+      status: "failed",
+      promptText: "A fox discovers a glowing door",
+      failureReason: "PRIVATE_PROVIDER_DIAGNOSTIC_SENTINEL",
+      createdAt: new Date("2026-09-13T00:00:00.000Z"),
+      progress: null
+    };
+    return {
+      session: {
+        id: "session-opening",
+        userId: "user-1",
+        playbackState: {
+          currentAsset: asset,
+          nextAsset: null,
+          fallbackAsset: null,
+          crossfadeSeconds: 2
+        },
+        visualAssets: asset ? [asset] : [],
+        renderJobs: retryStatus ? [{ ...failedSeed, id: "seed-retry", status: retryStatus, failureReason: null, createdAt: new Date("2026-09-13T00:01:00.000Z") }, failedSeed] : [failedSeed],
+        wordmarkAudioReactiveOnly: false,
+        wordmarkOverlayVisible: false,
+        wordmarkOpacity: 1,
+        wordmarkSize: 1,
+        progressOverlayVisible: false,
+        qrOverlayVisible: false
+      },
+      queueHealth: { approvedCount: 0, queuedRenderCount: 0, renderingCount: 0, readyAssetCount: 0, waitingOnRender: false }
+    } as unknown as NonNullable<SessionSnapshot>;
+  }
+
+  it.each([false, true])("explains an empty show's failed opening without exposing provider details (monitor=%s)", (isMonitor) => {
+    const markup = renderToStaticMarkup(React.createElement(ShowScreen, {
+      initialSnapshot: openingSnapshot(), isMonitor
+    }));
+
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("The story could not start");
+    expect(markup).toContain("The opening clip failed to generate. Return to the dashboard to retry.");
+    expect(markup).not.toContain("PRIVATE_PROVIDER_DIAGNOSTIC_SENTINEL");
+    expect(markup).not.toContain("<video");
+  });
+
+  it.each(["queued", "in_progress", "completed"] as const)("suppresses an old failure once the newer opening retry is %s", (retryStatus) => {
+    for (const isMonitor of [false, true]) {
+      const markup = renderToStaticMarkup(React.createElement(ShowScreen, {
+        initialSnapshot: openingSnapshot({ retryStatus }), isMonitor
+      }));
+      expect(markup).not.toContain("The story could not start");
+      expect(markup).not.toContain('role="alert"');
+    }
+  });
+
+  it.each([false, true])("keeps an existing playable clip clear of old generation errors (monitor=%s)", (isMonitor) => {
+    const markup = renderToStaticMarkup(React.createElement(ShowScreen, {
+      initialSnapshot: openingSnapshot({ hasPlayingClip: true }), isMonitor
+    }));
+
+    expect(markup).toContain('src="/opening.mp4"');
+    expect(markup).not.toContain("The story could not start");
+    expect(markup).not.toContain('role="alert"');
+  });
+});

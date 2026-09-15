@@ -61,8 +61,9 @@ export async function persistVideoAsset(assetId: string, data: Buffer) {
 
     thumbnailUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${closingFrameObjectPath}`;
   } catch (error) {
-    // A missing handoff still should not discard an otherwise valid completed
-    // render. The next remix falls back to ordinary video-to-video continuity.
+    // Keep the valid clip if its optional cached still cannot be saved. The next
+    // continuation re-extracts the final frame from this stored MP4 and will
+    // fail explicitly if that frame cannot be decoded.
     console.warn("[video-continuity] closing frame could not be persisted", {
       assetId,
       reason: error instanceof Error ? error.message : "unknown_error"

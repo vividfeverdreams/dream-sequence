@@ -95,6 +95,21 @@ describe("show monitor mode", () => {
     expect(canMutateShowPlayback(false)).toBe(true);
   });
 
+  it("advances a ready story scene at clip end even while audio effects are connected", () => {
+    expect(shouldAdvanceShowPlaybackAtVideoEnd({
+      isMonitor: false,
+      activeSlotEnded: true,
+      audioSyncConnected: true,
+      nextAssetReady: true
+    })).toBe(true);
+    expect(shouldAdvanceShowPlaybackAtVideoEnd({
+      isMonitor: false,
+      activeSlotEnded: true,
+      audioSyncConnected: true,
+      nextAssetReady: false
+    })).toBe(false);
+  });
+
   it("keeps monitor playback read-only without blocking local media advances", () => {
     expect(canMutateShowPlayback(true)).toBe(false);
     expect(

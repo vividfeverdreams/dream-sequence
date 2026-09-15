@@ -37,41 +37,35 @@ describe("remix transition cues", () => {
     createdAt: new Date(`2026-07-28T12:${String(minute).padStart(2, "0")}:00.000Z`)
   });
 
-  it("keeps the original through remix four, then rolls the newest five remixes", () => {
+  it("keeps the original through remix two, then rolls the newest three remixes", () => {
     const original = rotationAsset("original", 0, "seed");
     const remixes = Array.from({ length: 6 }, (_, index) =>
       rotationAsset(`remix-${index + 1}`, index + 1)
     );
 
     expect(
-      getChronologicalPlaybackRotation([original, ...remixes.slice(0, 4)]).map(
+      getChronologicalPlaybackRotation([original, ...remixes.slice(0, 2)]).map(
         (asset) => asset.id
       )
     ).toEqual([
       "original",
       "remix-1",
-      "remix-2",
-      "remix-3",
-      "remix-4"
+      "remix-2"
     ]);
     expect(
-      getChronologicalPlaybackRotation([original, ...remixes.slice(0, 5)]).map(
+      getChronologicalPlaybackRotation([original, ...remixes.slice(0, 3)]).map(
         (asset) => asset.id
       )
     ).toEqual([
       "remix-1",
       "remix-2",
-      "remix-3",
-      "remix-4",
-      "remix-5"
+      "remix-3"
     ]);
     expect(
       getChronologicalPlaybackRotation([original, ...remixes]).map(
         (asset) => asset.id
       )
     ).toEqual([
-      "remix-2",
-      "remix-3",
       "remix-4",
       "remix-5",
       "remix-6"
@@ -87,8 +81,9 @@ describe("remix transition cues", () => {
     ];
 
     expect(getNextPlaybackRotationAsset(assets, "remix-3")?.id).toBe("remix-4");
-    expect(getNextPlaybackRotationAsset(assets, "remix-6")?.id).toBe("remix-2");
-    expect(getNextPlaybackRotationAsset(assets, "remix-1")?.id).toBe("remix-2");
+    expect(getNextPlaybackRotationAsset(assets, "remix-4")?.id).toBe("remix-5");
+    expect(getNextPlaybackRotationAsset(assets, "remix-6")?.id).toBe("remix-4");
+    expect(getNextPlaybackRotationAsset(assets, "remix-1")?.id).toBe("remix-4");
   });
 
   it("cycles the seed and every playable remix when the show supplies the full asset count", () => {

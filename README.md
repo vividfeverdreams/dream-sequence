@@ -1,181 +1,83 @@
 # DREAM SEQUENCE
 
-DREAM SEQUENCE is a single-DJ MVP for live AI visuals. A DJ logs in, defines a visual DNA for the show, chooses a video model, seeds the first loop, and lets the crowd send remix ideas through SMS or a QR-linked web form. The app moderates and ranks those ideas, rewrites the winning one into a focused video-edit prompt, and crossfades into the next completed loop when it is ready.
+A shared visual story for live shows and Twitch streams. The host describes how the story begins, selects a clip length and quality, and chooses QR-code or Twitch audience input. Viewers answer **What happens next?**. Approved ideas enter a ranked queue; H3 Max creates the next story beat from the previous generated clip’s final frame.
 
-## What This MVP Includes
+## Experience
 
-- Next.js App Router frontend for:
-  - DJ login
-  - live dashboard
-  - public crowd submission page
-  - fullscreen show page
-- Prisma data model with:
-  - `User`
-  - `DJSession`
-  - `PromptSubmission`
-  - `ModerationResult`
-  - `RankingResult`
-  - `VisualAsset`
-  - `RenderJob`
-  - `PlaybackState`
-  - `AuditEvent`
-- SMS intake via Twilio webhook
-- Public web prompt intake via `/r/[sessionCode]`
-- OpenAI text scoring for moderation/ranking/prompt compilation
-- AI-assisted session setup that expands a plain-English concept into an editable visual-DNA draft
-- Selectable Gemini Omni Flash, Seedance 2.0, Seedance 2.5, and Hailuo 3.0 seed generation and video-remix editing through Runway
-- Optional audience reference photos with multimodal safety screening and image-guided remixes
-- SSE-driven realtime updates for the dashboard and show screen
-- Double-buffer video crossfade on the fullscreen playback route
-- Supabase Postgres persistence for users, sessions, queue state, and render metadata
-- Supabase Storage persistence for downloaded MP4 assets
-- Legacy direct-Gemini fallback plus demo mode when neither provider key is configured
+- One required opening prompt; no model picker or visual-DNA questionnaire.
+- H3 Max through fal.ai is the only video-generation provider.
+- Simple 5-, 10-, and 15-second choices; the API accepts whole seconds from 5 through 15.
+- 480P, 768P (default), and 1080P quality. The default clip length is 5 seconds. fal describes 1080P as refinement from native 768P.
+- QR page: original free-text continuation, optional nickname, moderation, device limits, and progress tracking.
+- Twitch mode: the host connects a Twitch account, and viewers type `!next` followed by their idea. Other chat is ignored. See [Twitch setup](docs/TWITCH_SETUP.md).
+- Existing projection, audio-reactive visual effects, overlays, and manual playback controls remain available. Playback continuously cycles through the latest three videos in chronological order, wrapping back to the first at clip boundaries. Newly ready clips take priority, then join the rolling three-video loop. New story clips continue from the latest generated clip's final frame regardless of which video is currently playing.
 
-## Important Product Constraint
+## Generation and continuity
 
-Live video generation and editing use Runway's asynchronous task API. The creation page constrains clip length to each selected model's supported whole-second range: Gemini Omni Flash 3–10 seconds, Seedance 2.0 4–15 seconds, Seedance 2.5 4–30 seconds, and Hailuo 3.0 5–15 seconds. The current loop keeps playing while a task runs; after Runway publishes an output URL, the app immediately downloads and stores the completed MP4 for durable playback.
+The opening request goes to `minimax/h3-max/image-to-video` with a text prompt and no image. This endpoint supports text-only opening generation. Each continuation downloads the latest completed generation, decodes its actual final frame, and sends that frame as `image_url` to the same endpoint. A missing or undecodable predecessor fails the request; it never starts an unrelated text-only continuation.
 
-## Local Setup
+This provides a visual starting anchor, not a guarantee of perfect temporal continuity: image-to-video cannot carry the previous clip’s full motion, audio, or hidden model state. H3 Max can still change details. The player keeps the current clip visible while a successor is generated, so generation latency is not represented as instant live video.
 
-1. Install dependencies.
-2. Copy `.env.example` to `.env` and point it at a Supabase Postgres project.
-3. Run the Prisma migration against that database.
-4. Seed the demo user and starter session.
-5. Start the app.
+Completed MP4 files are copied to Supabase Storage for durable playback. The queue serializes generation per session and uses the most recently generated clip as the parent even if the host manually replays older footage. API queue submission is not retried in-place after an ambiguous network error. Status checks and output persistence can retry without submitting another generation.
 
-Example commands:
+Audience receipts return after moderation and saving the idea; video preparation runs afterward. Text assessment has a 15-second timeout before using the existing local safety check. Twitch intake saves each batch before starting video preparation, and render reconciliation does not wait for chat intake. Rate limits preserve the typed idea and show a clear rejection; exhausted render retries show a final failure instead of an endless queue state.
 
-```bash
-cp .env.example .env
-pnpm install
-pnpm db:migrate
-pnpm db:seed
-pnpm dev
-```
+If the opening video finishes at fal but fails during playback preparation, the dashboard offers **Recover First Video**. This retries preparation of the same saved result and never submits a replacement generation. Completion diagnostics identify the failed preparation step without logging prompts, media URLs, or credentials.
 
-If you use `npm` instead of `pnpm`, the equivalent commands are:
+## Local setup
 
-```bash
-cp .env.example .env
-npm install
-npx prisma migrate dev
-npm run db:seed
-npm run dev
-```
+1. Install dependencies with `pnpm install`.
+2. Copy `.env.example` to `.env.local` and supply your database, auth, storage and fal settings. Prisma reads `.env` for command-line migrations, so supply the same database URLs there or through the command environment.
+3. Apply migrations to the intended development database, then run `pnpm db:generate`.
+4. Optionally seed a development database with `pnpm db:seed`.
+5. Start with `pnpm dev`.
 
-## Demo Credentials
+The seed account uses `dj@example.com` / `dreamsequence-demo` unless overridden with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`. Use a development database for this seed.
 
-The seed script creates:
+## Server configuration
 
-- Email: `dj@example.com`
-- Password: `dreamsequence-demo`
+Required:
 
-You can override those values with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`.
+- `AUTH_SECRET`: strong session-signing secret.
+- `DATABASE_URL` / `DIRECT_URL`: Supabase Postgres runtime and migration URLs.
+- `NEXT_PUBLIC_APP_URL`: application origin.
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`: durable media storage.
+- `FAL_KEY`: fal.ai server credential. Never use a `NEXT_PUBLIC_` prefix or send it to the browser.
 
-## Environment Variables
+Optional:
 
-### Required for the full live stack
+- `OPENAI_API_KEY` / `OPENAI_TEXT_MODEL`: story moderation and ranking. Without a key, deterministic moderation/ranking is used. These are text operations; all video generation uses H3 Max.
+- Twitch values from `.env.example` and [the setup guide](docs/TWITCH_SETUP.md).
 
-- `AUTH_SECRET`
-- `DATABASE_URL`
-- `NEXT_PUBLIC_APP_URL`
+No demo-video or alternate-generation-provider fallback is used when `FAL_KEY` is missing. The dashboard reports that video generation needs configuration.
 
-### Required for OpenAI-backed moderation and session setup
+## Deploying this overhaul
 
-- `OPENAI_API_KEY`
-- `OPENAI_TEXT_MODEL`
+Before switching the deployed application:
 
-### Required for selectable Runway video generation and remixing
+1. Configure `FAL_KEY` in the target deployment environment and verify Supabase storage is available.
+2. Apply `prisma/migrations/20260913000000_h3_story_and_twitch/migration.sql` to the intended database, together with any outstanding earlier migrations. The existing `vercel-build` script includes the idempotent SQL step used by this repository’s deployment convention.
+3. Deploy the app. The migration adds clip-quality/audience settings and Twitch tables, updates stored model selections to H3 Max, and constrains old durations to 5–15 seconds. Existing clips stay available; unfinished jobs from retired providers fail with an instruction to start an H3 Max clip.
+4. If using Twitch, configure a public HTTPS app origin and complete [Twitch setup](docs/TWITCH_SETUP.md). Localhost cannot receive Twitch webhooks without a public HTTPS tunnel.
+5. Exercise one opening clip and one audience continuation in the target environment, then connect a channel and send an `!next` message. This is the live provider/account verification step; automated checks use mocked provider responses. A local live validation of this overhaul also completed one 5-second 480P opening and one image-conditioned continuation through fal, with both files decoding to 832×480. The continuation preserved the opening’s final-frame composition, with small model/codec differences.
 
-- `RUNWAYML_API_SECRET`
+The repository's [`vercel.json`](vercel.json) schedules Twitch recovery and token validation every minute on production deployments. This requires **Vercel Pro or Enterprise** and a configured `CRON_SECRET`. For Hobby, remove the `crons` entry before deploying and use an external scheduler; other hosts also need an external scheduler. See [Twitch setup](docs/TWITCH_SETUP.md) for the authenticated request and verification steps.
 
-The video-generation model is selected per session on the creation page. `GEMINI_API_KEY` also powers source-video-aware prompt direction, with `GEMINI_PROMPT_MODEL` defaulting to `gemini-3.6-flash`; `GEMINI_VIDEO_MODEL` remains the legacy Gemini Omni generation fallback. Seedance and Hailuo generation require Runway. The app reads OpenAI, Runway, and Google credentials from server-side environment variables only. The dashboard does not store or edit API keys.
+Native video decoding uses `node-av`; Next traces both its platform binaries and pnpm dependency aliases into the relevant server functions. The isolated native tracing test verifies that the packaged decoder can load outside the development installation. Generation/reconciliation uses the Node.js runtime.
 
-The AI-assisted session setup uses this same OpenAI text-model configuration. If draft generation is unavailable, the setup screen still lets the DJ enter every field manually.
+## Main routes
 
-### Required for Twilio SMS intake
+- `/dashboard/new`: create a story space.
+- `/dashboard`: start, monitor and control the story.
+- `/r/[sessionCode]`: audience continuation page.
+- `/r/account/[accountId]`: stable host audience link.
+- `/show/[sessionId]`: projection output.
+- `/api/twitch/connect`, `/api/twitch/callback`, `/api/twitch/status`, `/api/twitch/disconnect`: account connection.
+- `/api/twitch/webhook`: signed EventSub intake.
+- `/api/twitch/process`: authenticated scheduled recovery of queued messages and token validation.
 
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_PHONE_NUMBER`
+## Validation
 
-### Optional demo fallback
+Run `pnpm typecheck`, `pnpm test`, and `pnpm build`. Tests cover provider contracts, final-frame extraction, queue concurrency and failures, story settings/intake, OAuth state, webhook signatures, replay prevention, and existing playback/audio controls.
 
-- `DEMO_LOOP_URL`
-
-If neither `RUNWAYML_API_SECRET` nor `GEMINI_API_KEY` is present, the app uses a demo video URL so the playback and crossfade flow can still be exercised locally. If `OPENAI_API_KEY` is absent, the app falls back to its built-in moderation and ranking behavior.
-
-## Vercel Deployment
-
-The production app is designed for Vercel's serverless runtime. Configure the variables from `.env.example` in the Vercel Production environment, with these production-specific values:
-
-- Use Supabase's pooled connection string for `DATABASE_URL` and its direct connection string for `DIRECT_URL`.
-- Set `NEXT_PUBLIC_APP_URL` to the public production origin, such as `https://dream-sequence.vercel.app`.
-- Use a private server-side `SUPABASE_SERVICE_ROLE_KEY`; never expose it with a `NEXT_PUBLIC_` prefix.
-- Create the `SUPABASE_STORAGE_BUCKET` bucket before starting a real video render.
-- Add the three `TWILIO_*` variables only when SMS intake is enabled. The web audience form works without them.
-
-The live snapshot endpoint intentionally ends each serverless response before Vercel's function timeout. Browser `EventSource` clients reconnect automatically, preserving realtime dashboard and show updates without accumulating runtime timeout errors.
-
-## Core Routes
-
-- `/login`
-- `/dashboard`
-- `/r/[sessionCode]`
-- `/show/[sessionId]`
-
-## Core API Endpoints
-
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `POST /api/sessions`
-- `POST /api/sessions/[sessionId]/start`
-- `POST /api/sessions/[sessionId]/control`
-- `GET /api/sessions/[sessionId]/stream`
-- `POST /api/sessions/[sessionId]/transition`
-- `POST /api/sessions/[sessionId]/reconcile`
-- `POST /api/r/[sessionCode]`
-- `POST /api/twilio/inbound`
-- `GET /api/assets/[assetId]`
-
-## How The Queue Works
-
-1. Crowd prompt arrives from SMS or web form.
-2. The app rate-limits and normalizes it.
-3. The text model scores it for safety, cohesion, novelty, and remixability.
-4. Approved prompts enter the ranked queue.
-5. If no render is active and no next asset is waiting, the best approved prompt is selected.
-6. The app starts a Runway task with the session's selected video model or edits the current video for a remix, including an approved audience reference photo when one was attached.
-7. Once the render is completed, the output becomes the next queued loop.
-8. With audio sync disconnected, the fullscreen show keeps the existing automatic crossfade behavior.
-9. With audio sync connected, the ready loop waits for a detected build or section change, or for the operator to click **Take next remix now**.
-
-## Audio-Reactive Show Output
-
-Use the **Audio Reactive Engine** panel directly on the DJ dashboard, then open **Pop Out Show** or **Fullscreen Show** as the clean projection output:
-
-1. Route a mixer, audio interface, or virtual loopback output into an input device visible to the browser.
-2. Click **Connect input** and allow microphone/audio-input access for the site.
-3. Select the desired input, choose one of the 10 audio-reactive transformations from the dropdown, and adjust **VFX intensity**. The selected treatment transforms the video footage itself rather than drawing a graphic overlay.
-4. Turn on **Auto-cycle all 10 effects** to move to the next effect every 12 seconds while the input is connected.
-5. Leave **Take next remix on musical cue** enabled to crossfade ready remixes on detected builds and strong returns after quiet passages.
-
-The input is analyzed locally with the Web Audio API and is never connected to browser playback, which avoids monitoring feedback. Keep the dashboard open on the same browser and computer as the show window; it sends only reactive levels and transition cues to the visual output. The projection window contains no operator controls or status text.
-
-## Notes About Infrastructure Choices
-
-- Supabase Postgres is the source of truth in both development and production; the app does not rely on a serverless filesystem.
-- Rendered videos are uploaded to Supabase Storage and served from the configured public bucket.
-- Runway video tasks are polled until they succeed or fail. Successful output URLs are ephemeral, so reconciliation downloads each MP4 into Supabase Storage before exposing it to playback.
-- Audience photos are limited to supported image formats, verified by file signature, and screened with multimodal moderation before storage. Only images independently rejected at intake count toward the three-strike device lockout for that live session; downstream video-provider moderation failures are recorded as render diagnostics and never penalize the participant.
-- Each completed remix is persisted and its public MP4 URL becomes the source for the next Runway video-to-video task.
-
-## Testing
-
-Run:
-
-```bash
-pnpm test
-```
-
-The test suite covers the Runway and legacy Gemini request contracts, queue behavior, fallback assessment, auth helpers, playback transitions, and audio-reactive controls.
+Provider references: [H3 Max API](https://fal.ai/models/minimax/h3-max/image-to-video/api), [fal queue](https://fal.ai/docs/documentation/model-apis/inference/queue), [Twitch chat authorization](https://dev.twitch.tv/docs/chat/authenticating/), [Twitch webhooks](https://dev.twitch.tv/docs/eventsub/handling-webhook-events/).

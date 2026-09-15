@@ -1,615 +1,269 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { generateSessionDraft } from "@/app/dashboard/new/actions";
-import { sessionFormSchema, sessionIdeaSchema } from "@/lib/schemas";
-import {
-  defaultVideoModelId,
-  getVideoDurationForModelChange,
-  getVideoDurationOptions,
-  getVideoModelDefinition,
-  normalizeVideoModelId,
-  videoModelDefinitions
-} from "@/lib/video-models";
 
-const blankForm = {
-  name: "",
-  artistName: "",
-  trackName: "",
-  creativeBible: "",
-  allowedMotifs: "",
-  bannedTerms: "",
-  colorPalette: "",
-  motionRules: "",
-  basePrompt: "",
-  imageReferenceUrl: "",
-  smsNumber: "",
-  venueSafeMode: true,
-  artistControlEnabled: true,
-  autoSelectEnabled: true,
-  videoModel: defaultVideoModelId,
-  videoDurationSeconds: getVideoModelDefinition(defaultVideoModelId).defaultDurationSeconds,
-  submissionRateLimitEnabled: false,
-  submissionRateLimitCount: 3
+const draftStorageKey = "dream-sequence:story-draft";
+const durationOptions = [5, 10, 15] as const;
+const resolutionOptions = ["480P", "768P", "1080P"] as const;
+
+type StoryForm = {
+  basePrompt: string;
+  videoDurationSeconds: number;
+  videoResolution: (typeof resolutionOptions)[number];
+  audienceMode: "web" | "twitch";
 };
 
-type FlowStep = "idea" | "details";
-type DraftSource = "ai" | "manual";
+type TwitchStatus = {
+  configured: boolean;
+  connected: boolean;
+  login?: string | null;
+  displayName?: string | null;
+  subscriptionStatus?: string | null;
+};
 
-const inputClassName =
-  "w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 outline-none transition placeholder:text-white/30 focus:border-plasma";
+const blankForm: StoryForm = {
+  basePrompt: "",
+  videoDurationSeconds: 5,
+  videoResolution: "768P",
+  audienceMode: "web"
+};
 
 export function SessionSetupForm() {
   const router = useRouter();
-  const [step, setStep] = useState<FlowStep>("idea");
-  const [draftSource, setDraftSource] = useState<DraftSource>("ai");
-  const [idea, setIdea] = useState("");
-  const [form, setForm] = useState(blankForm);
-  const [ideaError, setIdeaError] = useState<string | null>(null);
+  const [form, setForm] = useState<StoryForm>(blankForm);
   const [error, setError] = useState<string | null>(null);
-  const [allowedMotifsEnabled, setAllowedMotifsEnabled] = useState(true);
-  const [isGenerating, startGenerating] = useTransition();
-  const [isCreating, startCreating] = useTransition();
-  const selectedVideoModelId = normalizeVideoModelId(form.videoModel);
-  const selectedVideoModel = getVideoModelDefinition(selectedVideoModelId);
-  const videoDurationOptions = getVideoDurationOptions(selectedVideoModelId);
+  const [isCreating, setIsCreating] = useState(false);
+  const [twitchStatus, setTwitchStatus] = useState<TwitchStatus | null>(null);
+  const [twitchStatusError, setTwitchStatusError] = useState(false);
+  const [twitchRefresh, setTwitchRefresh] = useState(0);
+  const [disconnectingTwitch, setDisconnectingTwitch] = useState(false);
+  const [twitchNotice, setTwitchNotice] = useState<string | null>(null);
 
-  function handleIdeaSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIdeaError(null);
-
-    const parsed = sessionIdeaSchema.safeParse({ idea });
-
-    if (!parsed.success) {
-      setIdeaError(parsed.error.issues[0]?.message ?? "Tell us what you want to create first.");
-      return;
-    }
-
-    startGenerating(async () => {
-      try {
-        const result = await generateSessionDraft(parsed.data);
-
-        if (!result.success) {
-          setIdeaError(result.error);
-          return;
-        }
-
-        setForm((current) => ({
-          ...current,
-          ...result.draft
-        }));
-        setAllowedMotifsEnabled(true);
-        setDraftSource("ai");
-        setError(null);
-        setStep("details");
-      } catch {
-        setIdeaError("We couldn't reach the AI just now. Try again, or enter the details manually.");
-      }
-    });
-  }
-
-  function enterManually() {
-    setForm(blankForm);
-    setAllowedMotifsEnabled(true);
-    setDraftSource("manual");
-    setIdeaError(null);
-    setError(null);
-    setStep("details");
-  }
-
-  function returnToIdea() {
-    setError(null);
-    setStep("idea");
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-
-    const parsed = sessionFormSchema.safeParse({
-      ...form,
-      allowedMotifs: allowedMotifsEnabled ? form.allowedMotifs : ""
-    });
-
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Check the session details and try again.");
-      return;
-    }
-
-    startCreating(async () => {
-      try {
-        const response = await fetch("/api/sessions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(parsed.data)
+  useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem(draftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as Partial<StoryForm>;
+        setForm({
+          basePrompt: typeof draft.basePrompt === "string" ? draft.basePrompt.slice(0, 1200) : "",
+          videoDurationSeconds: durationOptions.includes(draft.videoDurationSeconds as 5 | 10 | 15)
+            ? draft.videoDurationSeconds!
+            : blankForm.videoDurationSeconds,
+          videoResolution: resolutionOptions.includes(draft.videoResolution!)
+            ? draft.videoResolution!
+            : blankForm.videoResolution,
+          audienceMode: draft.audienceMode === "twitch" ? "twitch" : "web"
         });
-
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          setError(payload?.error ?? "Could not create the session.");
-          return;
-        }
-
-        router.push("/dashboard");
-        router.refresh();
-      } catch {
-        setError("Could not reach the server. Check your connection and try again.");
+        window.sessionStorage.removeItem(draftStorageKey);
       }
-    });
+    } catch {
+      // A draft is optional when browser storage is unavailable.
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("twitch") === "error") {
+      setError(params.get("twitchError") || "Twitch could not connect. Try connecting again to use chat for this story.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setTwitchStatusError(false);
+    void fetch("/api/twitch/status", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not check Twitch connection.");
+        return response.json() as Promise<TwitchStatus>;
+      })
+      .then(setTwitchStatus)
+      .catch(() => {
+        if (!controller.signal.aborted) setTwitchStatusError(true);
+      });
+    return () => controller.abort();
+  }, [twitchRefresh]);
+
+  useEffect(() => {
+    if (!twitchStatus?.subscriptionStatus || !["pending", "webhook_callback_verification_pending"].includes(twitchStatus.subscriptionStatus)) return;
+    const timer = window.setTimeout(() => setTwitchRefresh((value) => value + 1), 3000);
+    return () => window.clearTimeout(timer);
+  }, [twitchStatus]);
+
+  function connectTwitch() {
+    try {
+      window.sessionStorage.setItem(draftStorageKey, JSON.stringify(form));
+    } catch {
+      setError("Your browser could not save this story before connecting Twitch. Allow browser storage, then try again.");
+      return;
+    }
+    window.location.assign("/api/twitch/connect?returnTo=/dashboard/new");
   }
 
-  if (step === "idea") {
-    return (
-      <form onSubmit={handleIdeaSubmit} className="panel overflow-hidden">
-        <div className="border-b border-white/10 px-6 py-5 sm:px-8">
-          <StepIndicator activeStep="idea" />
-        </div>
+  async function disconnectTwitch() {
+    setDisconnectingTwitch(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/twitch/disconnect", { method: "POST" });
+      const payload = await response.json().catch(() => null) as { error?: string; revokeAtTwitch?: boolean } | null;
+      if (!response.ok) throw new Error(payload?.error || "Twitch could not disconnect. Please try again.");
+      setTwitchStatus((current) => current ? { ...current, connected: false, login: null, displayName: null, subscriptionStatus: null } : null);
+      setTwitchNotice(payload?.revokeAtTwitch
+        ? "Chat intake has stopped. Also remove Dream Sequence from Twitch Settings → Connections to finish revoking access."
+        : "Twitch disconnected.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Twitch could not disconnect. Please try again.");
+    } finally {
+      setDisconnectingTwitch(false);
+    }
+  }
 
-        <div className="bg-aurora px-6 py-8 sm:px-8 sm:py-10">
-          <div className="max-w-3xl">
-            <p className="font-mono text-xs uppercase tracking-[0.28em] text-plasma">Start with the idea</p>
-            <h2 className="mt-4 text-2xl font-semibold text-white sm:text-3xl">
-              What do you want this live visual session to feel like?
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65 sm:text-base">
-              Write it naturally. Mention the artist or track if you know them, plus any mood, colors, imagery, movement, or hard no&apos;s you already have in mind.
-            </p>
-          </div>
-
-          <div className="mt-7">
-            <label className="block">
-              <span className="sr-only">Describe your session idea</span>
-              <textarea
-                autoFocus
-                required
-                maxLength={1200}
-                rows={8}
-                value={idea}
-                disabled={isGenerating}
-                onChange={(event) => setIdea(event.target.value)}
-                className={`${inputClassName} min-h-52 resize-y bg-black/45 text-base leading-7 sm:text-lg`}
-                placeholder="I want a late-night visual world for my DJ set that feels like driving through a rain-soaked future city. Deep blues and electric amber, reflective glass, slow cinematic movement, and nothing too literal or chaotic..."
-              />
-            </label>
-            <span className="mt-2 block text-right font-mono text-xs text-white/35">{idea.length} / 1200</span>
-          </div>
-
-          {ideaError ? (
-            <p role="alert" className="mt-5 rounded-3xl border border-ember/20 bg-ember/10 px-4 py-3 text-sm text-ember">
-              {ideaError}
-            </p>
-          ) : null}
-
-          <div className="mt-7 flex flex-wrap items-center gap-4">
-            <button
-              type="submit"
-              disabled={isGenerating}
-              className="inline-flex min-w-44 items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isGenerating ? (
-                <>
-                  <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-ink/25 border-t-ink" />
-                  Expanding your idea...
-                </>
-              ) : (
-                "Build my session draft"
-              )}
-            </button>
-
-            <button
-              type="button"
-              disabled={isGenerating}
-              onClick={enterManually}
-              className="rounded-full border border-white/15 px-5 py-3 text-sm font-medium text-white/75 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Enter details manually
-            </button>
-
-            <p className="w-full text-xs leading-5 text-white/40 sm:ml-auto sm:w-auto">
-              AI creates a draft. You approve every detail before anything is saved.
-            </p>
-          </div>
-        </div>
-      </form>
-    );
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    if (!form.basePrompt.trim()) {
+      setError("Tell us how your story begins.");
+      return;
+    }
+    if (form.audienceMode === "twitch" && !twitchStatus?.connected) {
+      setError("Connect your Twitch account to collect story ideas from chat.");
+      return;
+    }
+    setIsCreating(true);
+    try {
+      const response = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, basePrompt: form.basePrompt.trim() })
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(payload?.error ?? "Could not create your story. Please try again.");
+        return;
+      }
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="panel overflow-hidden">
-      <div className="border-b border-white/10 px-6 py-5 sm:px-8">
-        <StepIndicator activeStep="details" />
+    <form onSubmit={handleSubmit} className="panel overflow-hidden" aria-busy={isCreating}>
+      <div className="bg-aurora px-6 py-8 sm:px-8 sm:py-10">
+        <p className="font-mono text-xs uppercase tracking-[0.28em] text-plasma">The first scene is yours</p>
+        <label className="mt-4 block">
+          <span className="block text-2xl font-semibold text-white sm:text-3xl">How does your story begin?</span>
+          <span id="story-prompt-help" className="mt-3 block max-w-2xl text-sm leading-7 text-white/65">
+            Set the scene, introduce a character, or start with something impossible. Your audience decides what happens next.
+          </span>
+          <textarea
+            autoFocus
+            required
+            name="basePrompt"
+            maxLength={1200}
+            rows={5}
+            value={form.basePrompt}
+            disabled={isCreating}
+            onChange={(event) => setForm((current) => ({ ...current, basePrompt: event.target.value }))}
+            aria-describedby="story-prompt-help"
+            className="mt-6 min-h-44 w-full resize-y rounded-3xl border border-white/15 bg-black/40 px-5 py-4 text-base leading-7 outline-none transition placeholder:text-white/35 focus:border-plasma disabled:opacity-60 sm:text-lg"
+            placeholder="A lone astronaut discovers a glowing door in the middle of a desert. As she reaches for it, the sand begins to float…"
+          />
+        </label>
+        <p className="mt-2 text-right font-mono text-xs text-white/35">{form.basePrompt.length} / 1200</p>
       </div>
 
-      <div className="flex flex-wrap items-start justify-between gap-5 border-b border-white/10 bg-white/[0.025] px-6 py-6 sm:px-8">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.28em] text-plasma">
-            {draftSource === "ai" ? "AI draft ready" : "Manual setup"}
-          </p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">
-            {draftSource === "ai" ? "Review and shape the details." : "Define the visual DNA."}
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-            {draftSource === "ai"
-              ? "The AI expanded your idea into the same session questions as before. Everything below is editable—adjust anything it misunderstood before creating the session."
-              : "Complete the same session questions yourself. You can return to the first step at any time and ask AI to build a draft."}
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={returnToIdea}
-          className="rounded-full border border-white/15 px-5 py-2.5 text-sm font-medium text-white/75 transition hover:border-white/30 hover:bg-white/5"
-        >
-          Back to your idea
-        </button>
-      </div>
-
-      <div className="p-6 sm:p-8">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Session Name</span>
-            <input
-              required
-              maxLength={100}
-              value={form.name}
-              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Artist</span>
-            <input
-              required
-              maxLength={100}
-              value={form.artistName}
-              onChange={(event) => setForm((current) => ({ ...current, artistName: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Track</span>
-            <input
-              required
-              maxLength={100}
-              value={form.trackName}
-              onChange={(event) => setForm((current) => ({ ...current, trackName: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Twilio Number (optional)</span>
-            <input
-              type="tel"
-              maxLength={100}
-              value={form.smsNumber}
-              onChange={(event) => setForm((current) => ({ ...current, smsNumber: event.target.value }))}
-              className={inputClassName}
-              placeholder="+15555555555"
-            />
-          </label>
-
-          <label className="block lg:col-span-2">
-            <span className="mb-2 block text-sm font-medium text-white/80">Creative Bible</span>
-            <textarea
-              required
-              maxLength={600}
-              rows={4}
-              value={form.creativeBible}
-              onChange={(event) => setForm((current) => ({ ...current, creativeBible: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <div className="block">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm font-medium text-white/80">Allowed Motifs</span>
-              <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-white/65">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={allowedMotifsEnabled}
-                  onChange={(event) => setAllowedMotifsEnabled(event.target.checked)}
-                />
-                {allowedMotifsEnabled ? "On" : "Off"}
-              </label>
-            </div>
-            <textarea
-              required={allowedMotifsEnabled}
-              maxLength={400}
-              rows={4}
-              value={form.allowedMotifs}
-              onChange={(event) => setForm((current) => ({ ...current, allowedMotifs: event.target.value }))}
-              disabled={!allowedMotifsEnabled}
-              aria-describedby="allowed-motifs-help"
-              className={`${inputClassName} disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-black/15 disabled:text-white/25`}
-            />
-            <p id="allowed-motifs-help" className="mt-2 text-xs leading-5 text-white/45">
-              {allowedMotifsEnabled
-                ? "On: crowd ideas are guided toward this motif list."
-                : "Off: crowd members can suggest any motif that still fits the session and safety rules."}
-            </p>
-          </div>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Banned Terms</span>
-            <textarea
-              required
-              maxLength={400}
-              rows={4}
-              value={form.bannedTerms}
-              onChange={(event) => setForm((current) => ({ ...current, bannedTerms: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Color Palette</span>
-            <input
-              required
-              maxLength={200}
-              value={form.colorPalette}
-              onChange={(event) => setForm((current) => ({ ...current, colorPalette: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-white/80">Motion Rules</span>
-            <input
-              required
-              maxLength={300}
-              value={form.motionRules}
-              onChange={(event) => setForm((current) => ({ ...current, motionRules: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block lg:col-span-2">
-            <span className="mb-2 block text-sm font-medium text-white/80">Base Prompt</span>
-            <textarea
-              required
-              maxLength={1200}
-              rows={5}
-              value={form.basePrompt}
-              onChange={(event) => setForm((current) => ({ ...current, basePrompt: event.target.value }))}
-              className={inputClassName}
-            />
-          </label>
-
-          <label className="block lg:col-span-2">
-            <span className="mb-2 block text-sm font-medium text-white/80">Image Reference URL (optional)</span>
-            <input
-              type="url"
-              value={form.imageReferenceUrl}
-              onChange={(event) => setForm((current) => ({ ...current, imageReferenceUrl: event.target.value }))}
-              className={inputClassName}
-              placeholder="https://..."
-            />
-          </label>
-
-          <fieldset className="lg:col-span-2">
-            <legend className="text-sm font-medium text-white/80">Video remix model</legend>
-            <p id="video-model-help" className="mt-2 text-sm leading-6 text-white/50">
-              Choose the model that creates the opening visual and every remix in this session.
-            </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {videoModelDefinitions.map((model) => (
-                <label
-                  key={model.id}
-                  className={`cursor-pointer rounded-3xl border px-4 py-4 transition focus-within:ring-2 focus-within:ring-plasma/70 ${
-                    selectedVideoModelId === model.id
-                      ? "border-plasma/60 bg-plasma/10"
-                      : "border-white/10 bg-black/20 hover:border-white/20"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="videoModel"
-                    value={model.id}
-                    checked={selectedVideoModelId === model.id}
-                    aria-describedby="video-model-help"
-                    onChange={() =>
-                      setForm((current) => ({
-                        ...current,
-                        videoModel: model.id,
-                        videoDurationSeconds: getVideoDurationForModelChange(
-                          model.id,
-                          current.videoDurationSeconds
-                        )
-                      }))
-                    }
-                    className="sr-only"
-                  />
-                  <span className="flex flex-wrap items-center gap-2 text-base font-semibold text-white">
-                    {model.label}
-                    {model.id === defaultVideoModelId ? (
-                      <span className="rounded-full border border-white/15 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-white/55">
-                        Current
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="mt-2 block text-xs leading-5 text-white/50">
-                    {model.description} {model.minDurationSeconds}–{model.maxDurationSeconds} seconds.
-                  </span>
-                </label>
+      <div className="space-y-7 border-t border-white/10 px-6 py-7 sm:px-8">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <fieldset disabled={isCreating}>
+            <legend className="text-sm font-medium text-white/85">Clip length</legend>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {durationOptions.map((duration) => (
+                <Choice key={duration} name="videoDurationSeconds" value={String(duration)} checked={form.videoDurationSeconds === duration} onChange={() => setForm((current) => ({ ...current, videoDurationSeconds: duration }))}>
+                  {duration} sec
+                </Choice>
               ))}
             </div>
           </fieldset>
-
-          <label className="block lg:col-span-2">
-            <span className="mb-2 block text-sm font-medium text-white/80">Video length</span>
-            <select
-              name="videoDurationSeconds"
-              value={form.videoDurationSeconds}
-              aria-describedby="video-duration-help"
-              onChange={(event) => {
-                const durationSeconds = Number(event.currentTarget.value);
-
-                setForm((current) => ({
-                  ...current,
-                  videoDurationSeconds: durationSeconds
-                }));
-              }}
-              className={inputClassName}
-            >
-              {videoDurationOptions.map((duration) => (
-                <option key={duration} value={duration} className="bg-ink text-white">
-                  {duration} seconds
-                </option>
+          <fieldset disabled={isCreating}>
+            <legend className="text-sm font-medium text-white/85">Visual quality</legend>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {resolutionOptions.map((resolution) => (
+                <Choice key={resolution} name="videoResolution" value={resolution} checked={form.videoResolution === resolution} onChange={() => setForm((current) => ({ ...current, videoResolution: resolution }))}>
+                  {resolution.toLowerCase()}
+                </Choice>
               ))}
-            </select>
-            <span id="video-duration-help" className="mt-2 block text-xs leading-5 text-white/45">
-              {selectedVideoModel.label} supports whole-second clips from {selectedVideoModel.minDurationSeconds} to {selectedVideoModel.maxDurationSeconds} seconds. This applies to the opening seed and every crowd remix.
-            </span>
-          </label>
-        </div>
-
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-2xl">
-              <p className="font-mono text-xs uppercase tracking-[0.24em] text-plasma">Crowd remix prompting</p>
-              <h3 className="mt-2 text-lg font-semibold text-white">Artist control</h3>
-              <p id="artist-control-help" className="mt-2 text-sm leading-6 text-white/60">
-                {form.artistControlEnabled
-                  ? "On: the application moderates, scores, and rewrites crowd ideas using your Creative Bible, motifs, palette, and motion rules."
-                  : `Off — Raw Prompt Mode: crowd ideas bypass artist-direction scoring and intake rewriting. Their original words stay visible, while a source-video-aware director adapts only the private ${selectedVideoModel.label} render instruction. Your base prompt still seeds the show.`}
-              </p>
             </div>
+          </fieldset>
+        </div>
 
-            <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/15 px-4 py-3 text-sm font-medium text-white/80">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-describedby="artist-control-help"
-                checked={form.artistControlEnabled}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, artistControlEnabled: event.target.checked }))
-                }
-              />
-              {form.artistControlEnabled ? "On" : "Off — Raw prompts"}
-            </label>
+        <fieldset disabled={isCreating}>
+          <legend className="text-sm font-medium text-white/85">Where does the audience join in?</legend>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Choice name="audienceMode" value="web" checked={form.audienceMode === "web"} onChange={() => setForm((current) => ({ ...current, audienceMode: "web" }))}>
+              <span className="block">QR code</span>
+              <span className="mt-1 block text-xs font-normal leading-5 text-white/55">Scan the screen and type the next part.</span>
+            </Choice>
+            <Choice name="audienceMode" value="twitch" checked={form.audienceMode === "twitch"} onChange={() => setForm((current) => ({ ...current, audienceMode: "twitch" }))}>
+              <span className="block">Twitch mode</span>
+              <span className="mt-1 block text-xs font-normal leading-5 text-white/55">Let your Twitch chat continue the story.</span>
+            </Choice>
           </div>
-        </div>
+        </fieldset>
 
-        <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-2xl">
-              <p className="font-mono text-xs uppercase tracking-[0.24em] text-plasma">Crowd pacing</p>
-              <h3 className="mt-2 text-lg font-semibold text-white">Limit remixes per device</h3>
-              <p id="submission-rate-limit-help" className="mt-2 text-sm leading-6 text-white/60">
-                {form.submissionRateLimitEnabled
-                  ? `Each device can send up to ${form.submissionRateLimitCount} ${form.submissionRateLimitCount === 1 ? "remix" : "remixes"} within any ten-minute period.`
-                  : "Off: participants can submit as many remixes as they want. Reference images rejected at intake still count toward the separate device lockout."}
-              </p>
-            </div>
-
-            <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/15 px-4 py-3 text-sm font-medium text-white/80">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-describedby="submission-rate-limit-help"
-                checked={form.submissionRateLimitEnabled}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    submissionRateLimitEnabled: event.target.checked
-                  }))
-                }
-              />
-              {form.submissionRateLimitEnabled ? "On" : "Off"}
-            </label>
+        {form.audienceMode === "twitch" ? (
+          <div className="rounded-3xl border border-violet-300/20 bg-violet-400/[0.06] p-5" aria-live="polite">
+            {twitchStatusError ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-white/70">We couldn&apos;t check your Twitch connection.</p>
+                <button type="button" onClick={() => setTwitchRefresh((value) => value + 1)} className="rounded-full border border-white/20 px-4 py-2 text-sm">Try again</button>
+              </div>
+            ) : !twitchStatus ? (
+              <p className="text-sm text-white/70">Checking Twitch connection…</p>
+            ) : !twitchStatus.configured ? (
+              <p className="text-sm leading-6 text-white/70">Twitch connections haven&apos;t been enabled on this platform yet. You can use QR code mode now.</p>
+            ) : twitchStatus.subscriptionStatus && ["pending", "webhook_callback_verification_pending"].includes(twitchStatus.subscriptionStatus) ? (
+              <p className="text-sm leading-6 text-white/70">Twitch is verifying your channel connection…</p>
+            ) : twitchStatus.connected ? (
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-white">Connected to {twitchStatus.displayName || twitchStatus.login || "Twitch"}</p>
+                  <button type="button" disabled={disconnectingTwitch || isCreating} onClick={() => void disconnectTwitch()} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/65 transition hover:bg-white/5 disabled:opacity-50">{disconnectingTwitch ? "Disconnecting…" : "Disconnect"}</button>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-white/65">Viewers type <span className="font-mono text-violet-200">!next followed by their idea</span> in your chat. Approved ideas join the story queue while your show is live.</p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <p className="max-w-md text-sm leading-6 text-white/70">Connect your channel, then viewers can send <span className="font-mono text-violet-200">!next</span> with their idea in chat.</p>
+                <button type="button" onClick={connectTwitch} className="rounded-full bg-violet-400 px-5 py-3 text-sm font-semibold text-ink">Connect Twitch</button>
+              </div>
+            )}
           </div>
-
-          <label className="mt-5 block max-w-xs">
-            <span className="mb-2 block text-sm font-medium text-white/80">Remixes per device</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={20}
-              step={1}
-              value={form.submissionRateLimitCount}
-              disabled={!form.submissionRateLimitEnabled}
-              aria-describedby="submission-rate-limit-help"
-              onChange={(event) => {
-                const nextValue = event.currentTarget.valueAsNumber;
-
-                if (Number.isInteger(nextValue)) {
-                  setForm((current) => ({
-                    ...current,
-                    submissionRateLimitCount: Math.min(20, Math.max(1, nextValue))
-                  }));
-                }
-              }}
-              className={`${inputClassName} disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-black/15 disabled:text-white/25`}
-            />
-          </label>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-4 text-sm text-white/75">
-          <label className="inline-flex items-center gap-3 rounded-full border border-white/10 px-4 py-3">
-            <input
-              type="checkbox"
-              checked={form.venueSafeMode}
-              onChange={(event) => setForm((current) => ({ ...current, venueSafeMode: event.target.checked }))}
-            />
-            Venue-safe mode
-          </label>
-
-          <label className="inline-flex items-center gap-3 rounded-full border border-white/10 px-4 py-3">
-            <input
-              type="checkbox"
-              checked={form.autoSelectEnabled}
-              onChange={(event) => setForm((current) => ({ ...current, autoSelectEnabled: event.target.checked }))}
-            />
-            Auto-select winning prompts
-          </label>
-        </div>
-
-        {error ? (
-          <p role="alert" className="mt-5 rounded-3xl border border-ember/20 bg-ember/10 px-4 py-3 text-sm text-ember">
-            {error}
-          </p>
         ) : null}
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
-          <p className="max-w-2xl text-sm leading-7 text-white/65">
-            {form.artistControlEnabled
-              ? `The first live render seeds the show from your base prompt with ${selectedVideoModel.label}. After that, approved crowd prompts are rewritten into focused video edits using the same model.`
-              : `The first live render still uses your base prompt with ${selectedVideoModel.label}. After that, original crowd wording remains preserved for attribution while a video-aware director adapts the private render prompt to the current clip.`}
-          </p>
-
-          <button
-            type="submit"
-            disabled={isCreating}
-            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isCreating ? "Creating..." : "Create Session"}
-          </button>
-        </div>
+        {form.audienceMode === "twitch" && twitchNotice ? <p role="status" className="text-sm leading-6 text-white/65">{twitchNotice}</p> : null}
+        <p className="text-sm leading-6 text-white/50">Powered by H3 Max. Every new scene begins from the previous clip&apos;s last frame.</p>
+        {error ? <p role="alert" className="rounded-3xl border border-ember/25 bg-ember/10 px-4 py-3 text-sm text-ember">{error}</p> : null}
+        <button type="submit" disabled={isCreating || disconnectingTwitch || (form.audienceMode === "twitch" && !twitchStatus?.connected)} className="w-full rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-48">
+          {isCreating ? "Creating your space…" : "Create my story space"}
+        </button>
       </div>
     </form>
   );
 }
 
-function StepIndicator({ activeStep }: { activeStep: FlowStep }) {
+function Choice({ name, value, checked, onChange, children }: {
+  name: string;
+  value: string;
+  checked: boolean;
+  onChange: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <ol aria-label="Session setup progress" className="flex items-center gap-3 text-xs font-medium uppercase tracking-[0.18em]">
-      <li className={activeStep === "idea" ? "text-plasma" : "text-white/45"}>
-        <span className="mr-2 font-mono">01</span>
-        Describe
-      </li>
-      <li aria-hidden="true" className="h-px w-8 bg-white/15" />
-      <li className={activeStep === "details" ? "text-plasma" : "text-white/35"}>
-        <span className="mr-2 font-mono">02</span>
-        Review &amp; edit
-      </li>
-    </ol>
+    <label className={`block cursor-pointer rounded-2xl border px-4 py-3 text-center text-sm font-semibold transition focus-within:ring-2 focus-within:ring-plasma ${checked ? "border-plasma/60 bg-plasma/10 text-white" : "border-white/10 bg-black/20 text-white/65 hover:border-white/25"}`}>
+      <input type="radio" name={name} value={value} checked={checked} onChange={onChange} className="sr-only" />
+      {children}
+    </label>
   );
 }

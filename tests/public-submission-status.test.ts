@@ -100,4 +100,45 @@ describe("public provider-moderation status", () => {
     );
     expect(mocks.countAuditEvents).toHaveBeenCalledOnce();
   });
+
+  it("reports exhausted video generation as a terminal failure", async () => {
+    mocks.findSubmission.mockResolvedValue({
+      ...(await mocks.findSubmission()),
+      status: "failed",
+      approvalReason: "Approved for the story queue."
+    });
+    mocks.findRenderJobs.mockResolvedValue([{ status: "failed", failureReason: "PRIVATE_PROVIDER_DIAGNOSTIC" }]);
+
+    const status = await getPublicSubmissionStatus("LIVE01", "submission-1");
+
+    expect(status?.state).toBe("failed");
+    expect(status?.detail).toContain("automatic retries have stopped");
+    expect(status?.detail).not.toContain("PRIVATE_PROVIDER_DIAGNOSTIC");
+  });
+
+  it("explains uncertain provider acceptance without promising another render attempt", async () => {
+    mocks.findSubmission.mockResolvedValue({
+      ...(await mocks.findSubmission()),
+      status: "failed",
+      approvalReason: "Approved for the story queue."
+    });
+    mocks.findRenderJobs.mockResolvedValue([{ status: "failed", providerFailureCode: "FAL_SUBMISSION_UNKNOWN" }]);
+
+    const status = await getPublicSubmissionStatus("LIVE01", "submission-1");
+
+    expect(status?.state).toBe("failed");
+    expect(status?.detail).toContain("did not confirm this request");
+    expect(status?.detail).toContain("avoid duplicate videos");
+  });
+
+  it("keeps a failed attempt retrying when its submission is still approved", async () => {
+    mocks.findSubmission.mockResolvedValue({
+      ...(await mocks.findSubmission()),
+      status: "approved",
+      approvalReason: "Approved for the story queue."
+    });
+    mocks.findRenderJobs.mockResolvedValue([{ status: "failed", failureReason: "Temporary provider outage" }]);
+
+    expect((await getPublicSubmissionStatus("LIVE01", "submission-1"))?.state).toBe("retrying");
+  });
 });

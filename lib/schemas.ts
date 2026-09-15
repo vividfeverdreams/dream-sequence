@@ -3,7 +3,9 @@ import {
   defaultVideoModelId,
   getVideoModelDefinition,
   isVideoModelDurationSupported,
-  videoModelIds
+  videoModelIds,
+  videoResolutions,
+  defaultVideoResolution
 } from "@/lib/video-models";
 
 function requiredText(label: string, maxLength: number) {
@@ -16,60 +18,38 @@ function requiredText(label: string, maxLength: number) {
     .max(maxLength, `${label} must be ${maxLength} characters or fewer.`);
 }
 
-const optionalText = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-  z.string().trim().max(100).optional()
-);
-
-const optionalUrl = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-  z.string().trim().url("Enter a valid image reference URL.").optional()
-);
-
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
 });
 
 export const sessionFormSchema = z.object({
-  name: requiredText("Session name", 100),
-  artistName: requiredText("Artist", 100),
-  trackName: requiredText("Track", 100),
-  creativeBible: requiredText("Creative bible", 600),
-  allowedMotifs: z.string().trim().max(400, "Allowed motifs must be 400 characters or fewer."),
-  bannedTerms: requiredText("Banned terms", 400),
-  colorPalette: requiredText("Color palette", 200),
-  motionRules: requiredText("Motion rules", 300),
-  basePrompt: requiredText("Base prompt", 1200),
-  imageReferenceUrl: optionalUrl,
-  smsNumber: optionalText,
+  basePrompt: requiredText("Story opening", 1200),
+  // Retained storage fields have defaults so setup needs only the story opening.
+  name: z.string().trim().max(100).default(""),
+  artistName: z.string().trim().max(100).default("Live Story"),
+  trackName: z.string().trim().max(100).default("DREAM SEQUENCE"),
+  creativeBible: z.string().trim().max(1200).default(""),
+  allowedMotifs: z.string().trim().max(400).default(""),
+  bannedTerms: z.string().trim().max(400).default(""),
+  colorPalette: z.string().trim().max(200).default(""),
+  motionRules: z.string().trim().max(300).default(""),
   venueSafeMode: z.boolean().default(true),
   artistControlEnabled: z.boolean().default(true),
   autoSelectEnabled: z.boolean().default(true),
   videoModel: z.enum(videoModelIds).default(defaultVideoModelId),
-  videoDurationSeconds: z
-    .number()
-    .int("Video length must be a whole number of seconds.")
+  videoDurationSeconds: z.number().int("Clip length must be a whole number of seconds.")
     .default(getVideoModelDefinition(defaultVideoModelId).defaultDurationSeconds),
-  submissionRateLimitEnabled: z.boolean().default(false),
-  submissionRateLimitCount: z
-    .number()
-    .int("Submission limit must be a whole number.")
-    .min(1, "Submission limit must be at least 1.")
-    .max(20, "Submission limit must be 20 or fewer.")
-    .default(3)
+  videoResolution: z.enum(videoResolutions).default(defaultVideoResolution),
+  audienceMode: z.enum(["web", "twitch"]).default("web"),
+  submissionRateLimitEnabled: z.boolean().default(true),
+  submissionRateLimitCount: z.number().int().min(1).max(20).default(3)
 }).superRefine((session, context) => {
-  if (
-    !isVideoModelDurationSupported(
-      session.videoModel,
-      session.videoDurationSeconds
-    )
-  ) {
+  if (!isVideoModelDurationSupported(session.videoModel, session.videoDurationSeconds)) {
     const model = getVideoModelDefinition(session.videoModel);
-
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `Video length must be between ${model.minDurationSeconds} and ${model.maxDurationSeconds} seconds for ${model.label}.`,
+      message: `Clip length must be between ${model.minDurationSeconds} and ${model.maxDurationSeconds} seconds for ${model.label}.`,
       path: ["videoDurationSeconds"]
     });
   }
@@ -111,33 +91,13 @@ export const sessionPrefillSchema = z.object({
 });
 
 export const publicSubmissionSchema = z.object({
-  templateId: z
-    .string()
-    .trim()
-    .min(1, "Choose a remix statement.")
-    .max(100)
-    .regex(/^[a-z0-9-]+$/, "Choose a valid remix statement."),
-  responseId: z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim() === ""
-        ? undefined
-        : value,
-    z
-      .string()
-      .trim()
-      .max(120)
-      .regex(/^[a-z0-9-]+$/, "Choose a valid remix answer.")
-      .optional()
+  prompt: requiredText("What happens next", 1200).min(6, "Describe what happens next in at least 6 characters."),
+  senderLabel: z.preprocess(
+    (value) => typeof value === "string" && !value.trim() ? undefined : value,
+    z.string().trim().min(2, "Use at least 2 characters for your nickname.").max(24)
+      .regex(/^[\p{L}\p{N}][\p{L}\p{N} _.-]*$/u, "Use letters, numbers, spaces, dots, dashes, or underscores in your nickname.")
+      .default("Guest")
   ),
-  senderLabel: z
-    .string()
-    .trim()
-    .min(2, "Choose a nickname with at least 2 characters.")
-    .max(24, "Keep your nickname to 24 characters or fewer.")
-    .regex(
-      /^[\p{L}\p{N}][\p{L}\p{N} _.-]*$/u,
-      "Use letters, numbers, spaces, dots, dashes, or underscores in your nickname."
-    ),
   participantToken: z.string().trim().min(16).max(200)
 });
 
