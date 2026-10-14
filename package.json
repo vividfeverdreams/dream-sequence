@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "prisma db execute --file prisma/migrations/20260728050000_add_submission_reference_images/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260728120000_add_session_video_duration/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260814000000_add_session_video_model/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260826000000_add_render_provider_failure_code/migration.sql --schema prisma/schema.prisma && next build",
+    "vercel-build": "prisma db execute --file prisma/migrations/20260728050000_add_submission_reference_images/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260728120000_add_session_video_duration/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260814000000_add_session_video_model/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260826000000_add_render_provider_failure_code/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20261013000000_lock_prisma_migrations_table/migration.sql --schema prisma/schema.prisma && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
