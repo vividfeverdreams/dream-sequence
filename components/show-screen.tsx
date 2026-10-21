@@ -11,7 +11,6 @@ import {
   getAuthoritativeNextPlaybackCandidate,
   getAuthoritativePlaybackCandidate,
   getIntroducedPlaybackAssetIds,
-  getNextPlaybackRotationAsset,
   getPlaybackAttribution,
   getShowPlaybackCandidate,
   isCueSyncedPlaybackActive,
@@ -29,6 +28,10 @@ import {
   getTypewriterChunkSize
 } from "@/lib/remix-transition";
 import { getAccountRemixPath } from "@/lib/remix-links";
+import {
+  getCueReadyPlaybackAsset,
+  getShowPlaybackRotationAsset
+} from "@/lib/show-playback-rotation";
 import { readShowPlaybackModeMessage } from "@/lib/show-playback-mode";
 import { shouldShowNextRemixProgressOverlay } from "@/lib/show-overlay-state";
 import type { SessionSnapshot } from "@/lib/snapshot";
@@ -149,6 +152,8 @@ export function ShowScreen({
   const [promptReveal, setPromptReveal] = useState<QueuedTransition | null>(null);
   const [promptExiting, setPromptExiting] = useState(false);
   const [requestedAssetId, setRequestedAssetId] = useState<string | null>(null);
+  const [authorizedBoundaryAssetId, setAuthorizedBoundaryAssetId] =
+    useState<string | null>(null);
   const [awaitingAuthoritativeCommit, setAwaitingAuthoritativeCommit] =
     useState<{
       assetId: string;
@@ -210,10 +215,10 @@ export function ShowScreen({
   const playableAssets = session.visualAssets.filter(
     (asset): asset is PlayableQueuedAsset => Boolean(asset?.id && asset.publicUrl)
   );
-  const localRotationAsset = getNextPlaybackRotationAsset(
+  const localRotationAsset = getShowPlaybackRotationAsset(
     playableAssets,
     activeAssetId,
-    playableAssets.length
+    introducedAssetIdsRef.current
   );
   const requestedAsset =
     requestedAssetId && requestedAssetId !== activeAssetId
@@ -233,23 +238,27 @@ export function ShowScreen({
     localRotationAuthoritativeAssetId:
       localRotationAuthoritativeAssetIdRef.current
   });
+  const cueSyncedPlaybackActive = isCueSyncedPlaybackActive({
+    audioSyncConnected: audioSync.connected,
+    autoTakeOnCue: audioSync.autoTakeOnCue
+  });
   const playbackCandidate = getShowPlaybackCandidate({
     authoritativeCurrentAsset,
     requestedAsset,
-    authoritativeNextAsset,
+    // A remix waiting for a musical cue must not occupy the standby slot
+    // and block the five-video rotation. Preload it once it is authorized.
+    authoritativeNextAsset: getCueReadyPlaybackAsset(
+      authoritativeNextAsset,
+      cueSyncedPlaybackActive,
+      authorizedBoundaryAssetId
+    ),
     localRotationAsset,
     isMonitor: monitorMode,
     holdForAuthoritativeCommit
   });
   const candidateAsset = playbackCandidate?.asset ?? null;
-  const cueCandidateAsset =
-    playbackCandidate?.source === "authoritative-next"
-      ? playbackCandidate.asset
-      : null;
-  const cueSyncedPlaybackActive = isCueSyncedPlaybackActive({
-    audioSyncConnected: audioSync.connected,
-    autoTakeOnCue: audioSync.autoTakeOnCue
-  });
+  // Listen for cues for the queued remix even while a rotation clip is next.
+  const cueCandidateAsset = authoritativeNextAsset;
   useEffect(() => {
     setSubmissionUrl(new URL(getAccountRemixPath(session.userId), window.location.origin).toString());
   }, [session.userId]);
@@ -422,6 +431,7 @@ export function ShowScreen({
 
     if (decision === "take-remix" && cueCandidateAsset?.id) {
       authorizedBoundaryAssetIdRef.current = cueCandidateAsset.id;
+      setAuthorizedBoundaryAssetId(cueCandidateAsset.id);
     }
   }, [
     audioSync.autoTakeOnCue,
@@ -458,6 +468,7 @@ export function ShowScreen({
     }
 
     authorizedBoundaryAssetIdRef.current = selectedAssetId;
+    setAuthorizedBoundaryAssetId(selectedAssetId);
     setRequestedAssetId(selectedAssetId);
   }, [
     activeAssetId,
@@ -814,7 +825,12 @@ export function ShowScreen({
         activeVideoSlotRef.current = transition.videoSlot;
         standbyTransitionRef.current = null;
         standbyReadyAssetIdRef.current = null;
-        authorizedBoundaryAssetIdRef.current = null;
+        // A cue can arrive at the same boundary as a local rotation. Only
+        // consume it when its own asset is actually promoted.
+        if (authorizedBoundaryAssetIdRef.current === transition.assetId) {
+          authorizedBoundaryAssetIdRef.current = null;
+          setAuthorizedBoundaryAssetId(null);
+        }
         if (shouldCommitAuthoritativePlayback) {
           locallyAdvancedAssetIdRef.current = transition.assetId;
           localRotationAuthoritativeAssetIdRef.current = null;
