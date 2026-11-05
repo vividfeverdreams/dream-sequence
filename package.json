@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
+    "dj:password": "tsx --env-file=.env scripts/set-dj-password.ts",
     "test": "vitest run",
     "postinstall": "prisma generate"
   },

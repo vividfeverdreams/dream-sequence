@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 type SessionPayload = {
   userId: string;
   email: string;
+  passwordStamp: string;
   exp: number;
 };
 
@@ -37,6 +38,16 @@ export function verifyPassword(password: string, storedHash: string) {
   const expected = Buffer.from(hash, "hex");
 
   return expected.length === derived.length && timingSafeEqual(expected, derived);
+}
+
+// Ties a session to the password it was created with, so changing the password
+// signs out every device, including sessions from before the stamp existed.
+export function createPasswordStamp(passwordHash: string) {
+  return signPayload(`password-stamp:${passwordHash}`);
+}
+
+export function isSessionCurrent(payload: Pick<SessionPayload, "passwordStamp">, passwordHash: string) {
+  return payload.passwordStamp === createPasswordStamp(passwordHash);
 }
 
 export function createSessionToken(payload: Omit<SessionPayload, "exp">) {

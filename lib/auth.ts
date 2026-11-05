@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
-import { parseSessionToken } from "@/lib/auth-core";
+import { isSessionCurrent, parseSessionToken } from "@/lib/auth-core";
 
 export async function getCurrentUser() {
   const cookieStore = await cookies();
@@ -18,11 +18,13 @@ export async function getCurrentUser() {
     return null;
   }
 
-  return db.user.findUnique({
+  const user = await db.user.findUnique({
     where: {
       id: payload.userId
     }
   });
+
+  return user && isSessionCurrent(payload, user.passwordHash) ? user : null;
 }
 
 export async function requireUser() {

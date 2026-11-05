@@ -3,8 +3,12 @@ import { hashPassword } from "@/lib/auth-core";
 import { createSessionCode } from "@/lib/utils";
 
 async function main() {
-  const email = process.env.SEED_DJ_EMAIL ?? "dj@example.com";
-  const password = process.env.SEED_DJ_PASSWORD ?? "dreamsequence-demo";
+  const email = process.env.SEED_DJ_EMAIL;
+  const password = process.env.SEED_DJ_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error("Set SEED_DJ_EMAIL and SEED_DJ_PASSWORD before seeding.");
+  }
 
   const existing = await db.user.findUnique({ where: { email } });
 

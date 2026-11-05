@@ -35,7 +35,9 @@ If the opening video finishes at fal but fails during playback preparation, the 
 4. Optionally seed a development database with `pnpm db:seed`.
 5. Start with `pnpm dev`.
 
-The seed account uses `dj@example.com` / `dreamsequence-demo` unless overridden with `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`. Use a development database for this seed.
+Seeding requires `SEED_DJ_EMAIL` and `SEED_DJ_PASSWORD`. Use a development database for this seed.
+
+To change the DJ login, run `pnpm dj:password` in a terminal. It changes the account in the database that `.env` points to, and signs out every device.
 
 ## Server configuration
 

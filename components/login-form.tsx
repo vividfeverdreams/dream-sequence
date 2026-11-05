@@ -3,8 +3,8 @@
 import { FormEvent, useState } from "react";
 
 export function LoginForm() {
-  const [email, setEmail] = useState("dj@example.com");
-  const [password, setPassword] = useState("dreamsequence-demo");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -43,11 +43,8 @@ export function LoginForm() {
 
   return (
     <div className="mx-auto max-w-md">
-      <p className="font-mono text-xs uppercase tracking-[0.32em] text-white/45">Demo Credentials Preloaded</p>
+      <p className="font-mono text-xs uppercase tracking-[0.32em] text-white/45">DJ Login</p>
       <h2 className="mt-4 text-3xl font-semibold text-white">Open the control deck.</h2>
-      <p className="mt-4 text-sm leading-7 text-white/70">
-        The seed script creates a demo DJ account with the fields already filled here. You can change them anytime.
-      </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5">
         <label className="block">
@@ -56,7 +53,7 @@ export function LoginForm() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition focus:border-plasma"
-            placeholder="dj@example.com"
+            placeholder="you@example.com"
             type="email"
             autoComplete="email"
           />
@@ -68,7 +65,6 @@ export function LoginForm() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             className="w-full rounded-3xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition focus:border-plasma"
-            placeholder="dreamsequence-demo"
             type="password"
             autoComplete="current-password"
           />

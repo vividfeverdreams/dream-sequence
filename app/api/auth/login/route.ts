@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getLoginCookie } from "@/lib/auth";
-import { createSessionToken, verifyPassword } from "@/lib/auth-core";
+import { createPasswordStamp, createSessionToken, verifyPassword } from "@/lib/auth-core";
 import { db } from "@/lib/db";
 import { loginSchema } from "@/lib/schemas";
 
@@ -39,7 +39,8 @@ export async function POST(request: Request) {
 
   const token = createSessionToken({
     userId: user.id,
-    email: user.email
+    email: user.email,
+    passwordStamp: createPasswordStamp(user.passwordHash)
   });
 
   const response = NextResponse.json({
