@@ -4,6 +4,7 @@ import {
   decideAutomaticCueTransition,
   decideManualTakeRequest,
   getAudienceFacingRemixPrompt,
+  getAudienceSubmissionNickname,
   getAuthoritativeNextPlaybackCandidate,
   getAuthoritativePlaybackCandidate,
   getChronologicalPlaybackRotation,
@@ -181,14 +182,25 @@ describe("remix transition cues", () => {
     expect(getAudienceFacingRemixPrompt(null)).toBe("New remix incoming.");
   });
 
-  it("attributes a web remix to its nickname and original prompt", () => {
+  it.each([
+    { source: "web", sender: "  NeonGhost  ", nickname: "NeonGhost" },
+    { source: "twitch", sender: "  TwitchViewer  ", nickname: "TwitchViewer" },
+    { source: "automatic", sender: null, nickname: "Dream Sequence" },
+    { source: "twitch", sender: "   ", nickname: null },
+    { source: "sms", sender: "+13125550123", nickname: null },
+    { source: "unknown", sender: "Private sender", nickname: null }
+  ])("uses public $source nicknames in prompt introductions", ({ source, sender, nickname }) => {
+    expect(getAudienceSubmissionNickname({ source, sender })).toBe(nickname);
+  });
+
+  it.each(["web", "twitch"])("attributes a %s remix to its nickname and original prompt", (source) => {
     expect(
       getPlaybackAttribution({
         promptText: "Private generation prompt",
         sourceSubmission: {
           rawText: "  Turn the skyline into liquid chrome  ",
           sender: "  NeonGhost  ",
-          source: "web"
+          source
         }
       })
     ).toEqual({
@@ -210,6 +222,20 @@ describe("remix transition cues", () => {
     ).toEqual({
       nickname: "CROWD REMIX",
       promptText: "Add violet lightning"
+    });
+  });
+
+  it("credits automatic continuations to Dream Sequence and preserves the generated story prompt", () => {
+    expect(getPlaybackAttribution({
+      promptText: "Private video direction",
+      sourceSubmission: {
+        rawText: "The door opens onto a sea of stars.",
+        sender: null,
+        source: "automatic"
+      }
+    })).toEqual({
+      nickname: "Dream Sequence",
+      promptText: "The door opens onto a sea of stars."
     });
   });
 

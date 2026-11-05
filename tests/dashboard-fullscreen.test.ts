@@ -2,6 +2,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+  DashboardShell,
   getDashboardShowFrameSource,
   isDashboardShowFullscreen,
   requestDashboardShowFullscreen,
@@ -59,6 +60,53 @@ function createSnapshot() {
 }
 
 describe("dashboard fullscreen show", () => {
+  it("labels automatic prompts and previous generations as Dream Sequence continuations", () => {
+    const snapshot = createSnapshot();
+    const continuation = {
+      id: "submission-automatic",
+      source: "automatic",
+      sender: null,
+      rawText: "The glowing door opens onto a sea of stars.",
+      referenceImageUrl: null,
+      status: "ready",
+      approvalReason: "Automatic continuation",
+      createdAt: new Date("2026-09-16T12:00:00.000Z"),
+      rankingResult: null
+    };
+    Object.assign(snapshot.session, {
+      name: "A door among the stars",
+      status: "live",
+      basePrompt: "A fox finds a glowing door.",
+      videoResolution: "768P",
+      videoDurationSeconds: 5,
+      submissions: [continuation]
+    });
+    snapshot.session.visualAssets.push({
+      id: "asset-automatic",
+      kind: "remix",
+      title: "The story continues",
+      promptText: "Private generation prompt",
+      publicUrl: "/automatic.mp4",
+      status: "archived",
+      createdAt: continuation.createdAt,
+      sourceSubmission: continuation
+    });
+
+    const markup = renderToStaticMarkup(React.createElement(DashboardShell, {
+      initialSnapshot: snapshot,
+      currentUserName: "Story host",
+      initialOpenAiStatus: { configured: false, source: "none", last4: null },
+      initialGoogleStatus: { configured: false, provider: "fal", source: "none", last4: null },
+      audioSyncRelayToken: ""
+    }));
+
+    expect(markup).toContain("Dream Sequence continuation");
+    expect(markup).toMatch(/<span[^>]*>Dream Sequence<\/span>/);
+    expect(markup).toContain(continuation.rawText);
+    expect(markup).not.toContain(">User prompt<");
+    expect(markup).not.toContain(">automatic<");
+  });
+
   it.each([false, true])(
     "does not render a fullscreen prompt when monitor mode is %s",
     (isMonitor) => {

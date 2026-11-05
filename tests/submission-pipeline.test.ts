@@ -24,7 +24,8 @@ const mocks = vi.hoisted(() => {
     takePlaybackAsset: vi.fn(),
     reconcileRenderJob: vi.fn(),
     failRenderJob: vi.fn(),
-    startVideoRender: vi.fn()
+    startVideoRender: vi.fn(),
+    createIdleStoryContinuation: vi.fn()
   };
   const transactionClient = {
     dJSession: {
@@ -115,6 +116,11 @@ vi.mock("@/lib/rate-limit", () => ({
   checkSubmissionRateLimit: mocks.checkSubmissionRateLimit
 }));
 
+vi.mock("@/lib/story-continuation", () => ({
+  createIdleStoryContinuation: mocks.createIdleStoryContinuation,
+  storyInputReceivedEvent: "story.input_received"
+}));
+
 import {
   attemptAutomatedSelection,
   ingestSubmission,
@@ -167,6 +173,14 @@ describe("submission receipt scheduling", () => {
     expect(scheduleSelection).toHaveBeenCalledWith("session-1");
     expect(mocks.findSession).toHaveBeenCalledTimes(1);
     expect(mocks.startVideoRender).not.toHaveBeenCalled();
+    expect(mocks.recordAuditEvent).toHaveBeenCalledWith({
+      type: "story.input_received", summary: "Received a new audience story idea", sessionId: "session-1"
+    });
+    expect(mocks.recordAuditEvent.mock.invocationCallOrder[0]).toBeLessThan(mocks.assessSubmission.mock.invocationCallOrder[0]);
+    expect(mocks.claimSubmission).toHaveBeenCalledWith({
+      where: { sessionId: "session-1", source: "automatic", status: { in: ["submitted", "approved"] }, selectedAt: null },
+      data: { status: "rejected", approvalReason: expect.stringContaining("new audience idea") }
+    });
   });
 
   it("keeps the receipt successful when scheduling fails after the idea is saved", async () => {
@@ -197,7 +211,7 @@ describe("submission receipt scheduling", () => {
   });
 
   it("returns the saved receipt and schedules rendering even if the activity log fails", async () => {
-    mocks.recordAuditEvent.mockRejectedValueOnce(new Error("Audit database unavailable"));
+    mocks.recordAuditEvent.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("Audit database unavailable"));
     const scheduleSelection = vi.fn();
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
@@ -256,6 +270,7 @@ describe("ready playback recovery", () => {
 describe("submission render queue", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.createIdleStoryContinuation.mockResolvedValue(null);
     mocks.promoteOldestReadyAsset.mockResolvedValue(null);
     mocks.takePlaybackAsset.mockResolvedValue(true);
     mocks.updateManyJobs.mockResolvedValue({
@@ -291,6 +306,48 @@ describe("submission render queue", () => {
     mocks.startVideoRender.mockResolvedValue({ kind: "live", requestId: "fal-known-id", outputUri: null, strategy: "fal_text_to_video" });
     mocks.failRenderJob.mockResolvedValue({ failed: true });
   }
+
+  it("renders an idle continuation through the existing story lineage when the audience queue is empty", async () => {
+    prepareAcceptedSeed();
+    mocks.findSession.mockResolvedValue({
+      id: "session-1", status: "live", userId: "user-1", autoSelectEnabled: true,
+      basePrompt: "A doorway opens.", videoModel: "h3_max", videoDurationSeconds: 5,
+      playbackState: { currentAssetId: "asset-current", emergencyPaused: false },
+      renderJobs: [], visualAssets: [], submissions: []
+    });
+    mocks.createIdleStoryContinuation.mockResolvedValue({ id: "automatic-1", prompt: "A bridge unfolds." });
+    mocks.findSubmission.mockResolvedValue({ rawText: "A bridge unfolds." });
+
+    await attemptAutomatedSelection("session-1");
+
+    expect(mocks.createIdleStoryContinuation).toHaveBeenCalledWith("session-1");
+    expect(mocks.createJob).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      submissionId: "automatic-1", mode: "remix", sourceAssetId: "asset-current"
+    }) }));
+    expect(mocks.startVideoRender).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "remix", sourceVideoUrl: "https://example.com/current.mp4",
+      prompt: expect.stringContaining("A bridge unfolds.")
+    }));
+  });
+
+  it("selects an audience idea before a higher-scored automatic continuation", async () => {
+    prepareAcceptedSeed();
+    mocks.findSession.mockResolvedValue({
+      id: "session-1", status: "live", userId: "user-1", autoSelectEnabled: true,
+      basePrompt: "A doorway opens.", videoModel: "h3_max", videoDurationSeconds: 5,
+      playbackState: { currentAssetId: "asset-current", emergencyPaused: false },
+      renderJobs: [], visualAssets: [], submissions: [
+        { id: "automatic-1", source: "automatic", rankingResult: { score: 100, winningPrompt: "A bridge unfolds." } },
+        { id: "viewer-1", source: "twitch", rankingResult: { score: 75, winningPrompt: "A fox appears." } }
+      ]
+    });
+    mocks.findSubmission.mockResolvedValue({ rawText: "A fox appears." });
+
+    await attemptAutomatedSelection("session-1");
+
+    expect(mocks.createIdleStoryContinuation).not.toHaveBeenCalled();
+    expect(mocks.createJob).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ submissionId: "viewer-1" }) }));
+  });
 
   it("retries saving the same accepted request ID without submitting another billable clip", async () => {
     prepareAcceptedSeed();

@@ -42,6 +42,7 @@ import {
   normalizeVideoResolution
 } from "@/lib/video-models";
 import { composeFinalProviderVideoPrompt } from "@/lib/video-prompt-budget";
+import { createIdleStoryContinuation, storyInputReceivedEvent } from "@/lib/story-continuation";
 
 type IntakeInput = {
   sessionCode: string;
@@ -163,6 +164,14 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
     };
   }
 
+  // Record arrival before slow moderation so an automatic continuation cannot
+  // mistake a viewer currently submitting an idea for an idle audience.
+  await recordAuditEvent({
+    type: storyInputReceivedEvent,
+    summary: "Received a new audience story idea",
+    sessionId: session.id
+  });
+
   const normalizedText = normalizePromptText(input.prompt);
   const recentWinningPrompts = session.submissions
     .map((item: any) => item.rankingResult?.winningPrompt)
@@ -247,6 +256,17 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
         status: decision === "approved" ? "approved" : "rejected",
         approvalReason
       }
+    });
+    // A fresh audience idea supersedes an automatic prompt that has not started
+    // rendering yet, including one still being written by the text provider.
+    await tx.promptSubmission.updateMany({
+      where: {
+        sessionId: session.id,
+        source: "automatic",
+        status: { in: ["submitted", "approved"] },
+        selectedAt: null
+      },
+      data: { status: "rejected", approvalReason: "A new audience idea arrived before this automatic continuation began." }
     });
     return created;
   });
@@ -423,10 +443,16 @@ export async function attemptAutomatedSelection(sessionId: string) {
 
   const nextSubmission = [...session.submissions]
     .filter((submission) => submission.rankingResult)
-    .sort((left, right) => (right.rankingResult?.score ?? 0) - (left.rankingResult?.score ?? 0))[0];
+    .sort((left, right) =>
+      Number(left.source === "automatic") - Number(right.source === "automatic") ||
+      (right.rankingResult?.score ?? 0) - (left.rankingResult?.score ?? 0)
+    )[0];
 
   if (!nextSubmission?.rankingResult) {
-    return null;
+    const continuation = await createIdleStoryContinuation(sessionId);
+    return continuation
+      ? queueAutomatedRender(sessionId, continuation.id, "remix", continuation.prompt)
+      : null;
   }
 
   return queueAutomatedRender(

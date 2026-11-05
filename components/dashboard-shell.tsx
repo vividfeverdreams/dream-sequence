@@ -8,6 +8,7 @@ import { DashboardDisclosure } from "@/components/dashboard-disclosure";
 import type { OpenAiConnectionStatus } from "@/lib/openai-key-store";
 import type { GoogleConnectionStatus } from "@/lib/google-key-store";
 import { getAccountRemixPath } from "@/lib/remix-links";
+import { getAudienceSubmissionNickname } from "@/lib/remix-transition";
 import { normalizeVideoProgress } from "@/lib/render-progress";
 import { createShowPlaybackModeMessage } from "@/lib/show-playback-mode";
 import type { SessionSnapshot } from "@/lib/snapshot";
@@ -84,20 +85,15 @@ export function getInitialGenerationPresentation(input: {
 }
 
 export function shouldReconcileSession({
-  sessionStatus,
-  waitingOnRender,
-  approvedCount,
-  hasReadyAsset
+  sessionStatus
 }: {
   sessionStatus: string;
   waitingOnRender: boolean;
   approvedCount: number;
   hasReadyAsset: boolean;
 }) {
-  return (
-    sessionStatus === "live" &&
-    (waitingOnRender || approvedCount > 0 || hasReadyAsset)
-  );
+  // An empty queue still needs the server to check the inactivity timer.
+  return sessionStatus === "live";
 }
 
 export function getDashboardShowFrameSource(
@@ -908,7 +904,9 @@ export function DashboardShell({
                         >
                           <div className="flex items-center justify-between gap-3">
                             <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-plasma">
-                              {userPrompt ? "User prompt" : asset.kind === "seed" ? "Initial generation" : "Fallback remix"}
+                              {asset.sourceSubmission?.source === "automatic"
+                                ? "Dream Sequence continuation"
+                                : userPrompt ? "User prompt" : asset.kind === "seed" ? "Initial generation" : "Fallback remix"}
                             </span>
                             <span className="text-xs text-white/38">{formatRelativeTime(asset.createdAt)}</span>
                           </div>
@@ -1094,7 +1092,7 @@ export function DashboardShell({
           <DashboardDisclosure
             eyebrow="Incoming crowd prompts"
             title="Audience Requests"
-            description="Review the latest nicknames, raw requests, scores, and winning prompts."
+            description="Audience ideas come first. After a minute without new input, Dream Sequence continues the story automatically. Pause selection to hold the story."
             status={`${session.submissions.length} recent`}
           >
             <div className="space-y-4">
@@ -1115,9 +1113,7 @@ export function DashboardShell({
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/60">
-                          {(submission.source === "web" || submission.source === "twitch") && submission.sender
-                            ? submission.sender
-                            : submission.source}
+                          {getAudienceSubmissionNickname(submission) ?? submission.source}
                         </span>
                         <span className="text-xs uppercase tracking-[0.24em] text-white/40">{submission.status}</span>
                       </div>

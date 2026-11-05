@@ -408,6 +408,19 @@ export function getAudienceFacingRemixPrompt(rawSubmissionText: string | null | 
   return rawSubmissionText?.trim() || "New remix incoming.";
 }
 
+export function getAudienceSubmissionNickname(submission: {
+  sender?: string | null;
+  source?: string | null;
+} | null | undefined) {
+  if (submission?.source === "automatic") {
+    return "Dream Sequence";
+  }
+
+  return submission?.source === "web" || submission?.source === "twitch"
+    ? submission.sender?.trim() || null
+    : null;
+}
+
 export function getPlaybackAttribution(asset: {
   promptText?: string | null;
   sourceSubmission?: {
@@ -417,14 +430,10 @@ export function getPlaybackAttribution(asset: {
   } | null;
 } | null) {
   const sourceSubmission = asset?.sourceSubmission;
-  const webNickname =
-    sourceSubmission?.source === "web"
-      ? sourceSubmission.sender?.trim()
-      : null;
 
   return {
     nickname:
-      webNickname ||
+      getAudienceSubmissionNickname(sourceSubmission) ||
       (sourceSubmission ? "CROWD REMIX" : "DREAM SEQUENCE"),
     promptText:
       sourceSubmission?.rawText?.trim() ||

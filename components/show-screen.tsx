@@ -7,6 +7,7 @@ import {
   acknowledgeAuthoritativePlaybackAsset,
   decideManualTakeRequest,
   getAudienceFacingRemixPrompt,
+  getAudienceSubmissionNickname,
   getAuthoritativeNextPlaybackCandidate,
   getAuthoritativePlaybackCandidate,
   getIntroducedPlaybackAssetIds,
@@ -462,10 +463,7 @@ export function ShowScreen({
       assetId: asset.id,
       assetStatus: asset.status,
       source: playbackCandidate?.source ?? "local-rotation",
-      nickname:
-        asset.sourceSubmission?.source === "web"
-          ? asset.sourceSubmission.sender?.trim() || null
-          : null,
+      nickname: getAudienceSubmissionNickname(asset.sourceSubmission),
       promptText: getAudienceFacingRemixPrompt(
         asset.sourceSubmission?.rawText ?? asset.promptText
       ),

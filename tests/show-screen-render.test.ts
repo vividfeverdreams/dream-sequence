@@ -61,7 +61,7 @@ describe("show screen video presentation", () => {
     expect(video.paused).toBe(false);
   });
 
-  it("renders asset-bound bottom-right attribution and no repeated intro", () => {
+  it.each(["web", "twitch", "automatic"])("renders asset-bound %s attribution and no repeated intro", (source) => {
     const currentAsset = {
       id: "asset-current",
       kind: "remix",
@@ -72,8 +72,8 @@ describe("show screen video presentation", () => {
       createdAt: new Date("2026-07-28T00:00:00.000Z"),
       sourceSubmission: {
         rawText: "Chrome clouds melt over the dance floor",
-        sender: "Nova",
-        source: "web",
+        sender: source === "automatic" ? null : "Nova",
+        source,
         referenceImageUrl: null
       }
     };
@@ -121,7 +121,7 @@ describe("show screen video presentation", () => {
     expect(videoMarkup).toContain("duration-200");
     expect(videoMarkup).toContain("motion-reduce:transition-none");
     expect(videoMarkup).not.toContain("translateZ(0)");
-    expect(markup).toContain("Nova");
+    expect(markup).toContain(source === "automatic" ? "Dream Sequence" : "Nova");
     expect(markup).toContain("Chrome clouds melt over the dance floor");
     expect(markup).toContain('data-attribution-asset-id="asset-current"');
     expect(markup).toContain("right-[clamp(1rem,3vw,3rem)]");

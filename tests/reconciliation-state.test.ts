@@ -21,7 +21,7 @@ describe("dashboard reconciliation scheduling", () => {
     ).toBe(true);
   });
 
-  it("stops polling settled or inactive sessions", () => {
+  it("keeps checking idle live stories and stops polling inactive sessions", () => {
     expect(
       shouldReconcileSession({
         sessionStatus: "live",
@@ -29,7 +29,7 @@ describe("dashboard reconciliation scheduling", () => {
         approvedCount: 0,
         hasReadyAsset: false
       })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldReconcileSession({
         sessionStatus: "stopped",

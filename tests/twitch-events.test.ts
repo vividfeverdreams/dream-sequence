@@ -51,6 +51,19 @@ describe("Twitch story intake", () => {
     expect(mocks.createDelivery).not.toHaveBeenCalled();
   });
 
+  it("preserves the submitting Twitch account name and falls back to its login", async () => {
+    const event = { ...payload.event, chatter_user_name: "", chatter_user_login: "neon_viewer" };
+    expect(await acceptTwitchChatEvent("delivery-1", { ...payload, event }, new Date())).toBe(true);
+    const saved = mocks.createDelivery.mock.calls[0][0].data;
+    mocks.findDeliveries.mockResolvedValueOnce([{ id: "delivery-1", payload: saved.payload, attempts: 0 }]);
+
+    await drainPendingTwitchEvents();
+
+    expect(mocks.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      source: "twitch", sender: "neon_viewer", prompt: "A dragon lands."
+    }), expect.anything());
+  });
+
   it("acknowledges duplicate deliveries without creating another inbox item", async () => {
     mocks.createDelivery.mockRejectedValueOnce({ code: "P2002" });
     expect(await acceptTwitchChatEvent("delivery-1", payload, new Date())).toBe(true);

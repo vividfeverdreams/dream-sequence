@@ -62,7 +62,7 @@ describe("client session snapshots", () => {
     }
   });
 
-  it("redacts participant identifiers while preserving web attribution", async () => {
+  it.each(["web", "twitch"])("redacts participant identifiers while preserving %s attribution", async (source) => {
     const createdAt = new Date("2026-07-28T12:00:00.000Z");
     const smsSourceSubmission = {
       rawText: "Add violet lightning",
@@ -77,7 +77,7 @@ describe("client session snapshots", () => {
       sender: "NeonGhost",
       senderFingerprint: "web-device-hash-private",
       messageSid: null,
-      source: "web",
+      source,
       referenceImageUrl: null
     };
     const createAsset = (
@@ -136,7 +136,7 @@ describe("client session snapshots", () => {
         },
         {
           id: "submission-web",
-          source: "web",
+          source,
           sender: "NeonGhost",
           senderFingerprint: "web-submission-device-hash-private",
           messageSid: null,

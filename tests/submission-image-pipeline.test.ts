@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => {
     },
     promptSubmission: {
       create: vi.fn(),
-      update: vi.fn()
+      update: vi.fn(),
+      updateMany: vi.fn()
     }
   };
 
