@@ -9,25 +9,26 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#091018",
-        plasma: "#10d6a0",
-        ember: "#ff7b53",
-        tide: "#4b8dff",
-        haze: "#ffe8c8"
+        ink: "#08080a",
+        plasma: "#c8f24b",
+        ember: "#ff7a45",
+        tide: "#7fb2ff",
+        haze: "#f2ebdd"
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(255,255,255,0.08), 0 18px 60px rgba(10,18,35,0.45)"
+        glow: "0 0 0 1px rgba(255,255,255,0.06), 0 24px 70px rgba(0,0,0,0.5)"
       },
       borderRadius: {
         "4xl": "2rem"
       },
       backgroundImage: {
         "aurora":
-          "radial-gradient(circle at 20% 20%, rgba(16,214,160,0.18), transparent 32%), radial-gradient(circle at 80% 15%, rgba(75,141,255,0.18), transparent 28%), radial-gradient(circle at 50% 80%, rgba(255,123,83,0.18), transparent 30%)"
+          "radial-gradient(90% 140% at 12% 0%, rgba(255,122,69,0.14), transparent 60%), radial-gradient(80% 120% at 100% 0%, rgba(127,178,255,0.08), transparent 60%)"
       },
       fontFamily: {
-        sans: ["Avenir Next", "Segoe UI Variable", "Segoe UI", "sans-serif"],
-        mono: ["IBM Plex Mono", "SFMono-Regular", "monospace"]
+        sans: ["var(--font-sans)", "Segoe UI", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "SFMono-Regular", "monospace"],
+        display: ["var(--font-display)", "Georgia", "serif"]
       }
     }
   },

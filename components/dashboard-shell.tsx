@@ -642,7 +642,7 @@ export function DashboardShell({
       <header className="flex flex-wrap items-start justify-between gap-5">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">Story Dashboard</p>
-          <h1 className="mt-4 text-4xl font-semibold text-white">{session.name}</h1>
+          <h1 className="mt-4 font-display text-5xl leading-none text-haze">{session.name}</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-white/70">
             {currentUserName}, your audience writes what happens next. Keep the story moving from here.
           </p>
@@ -1333,7 +1333,7 @@ function InitialGenerationStatus({
             <p className={`font-mono text-[11px] uppercase tracking-[0.3em] ${failed ? "text-ember" : "text-plasma"}`}>
               Initial generation
             </p>
-            <h2 className="mt-3 text-2xl font-semibold text-white">{title}</h2>
+            <h2 className="mt-3 font-display text-3xl leading-tight text-haze">{title}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-white/70">
               {failed
                 ? failureReason ||

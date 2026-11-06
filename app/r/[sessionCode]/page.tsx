@@ -24,8 +24,8 @@ export default async function PublicSubmissionPage({ params }: PublicRouteProps)
     <main className="mx-auto flex min-h-screen max-w-3xl items-center px-5 py-8 sm:px-6 sm:py-12">
       <div className="panel w-full overflow-hidden">
         <div className="border-b border-white/10 bg-aurora px-6 py-7 sm:px-8">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DREAM SEQUENCE</p>
-          <p className="mt-4 text-lg font-semibold text-white">{session.name}</p>
+          <p className="font-display text-2xl leading-none text-haze">Dream <em>Sequence</em></p>
+          <p className="mt-4 font-display text-3xl leading-tight text-haze">{session.name}</p>
           <p className="mt-2 text-sm leading-7 text-white/65">One story. Everyone has a part in it.</p>
         </div>
         <div className="space-y-5 px-6 py-8 sm:px-8">

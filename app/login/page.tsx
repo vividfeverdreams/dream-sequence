@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { LoginForm } from "@/components/login-form";
@@ -12,29 +13,23 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-12">
-      <div className="panel grid w-full max-w-5xl overflow-hidden lg:grid-cols-[0.95fr_1.05fr]">
-        <section className="border-b border-white/10 bg-white/[0.04] p-8 lg:border-b-0 lg:border-r lg:p-10">
-          <p className="font-mono text-xs uppercase tracking-[0.32em] text-plasma">DJ Access</p>
-          <h1 className="mt-5 text-4xl font-semibold text-white">Run the room without losing the loop.</h1>
-          <p className="mt-5 max-w-md text-base leading-7 text-white/70">
-            Log in to configure the session, choose its video model, review the crowd queue, and control when the next remix takes the screen.
-          </p>
+    <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-ink text-haze">
+      <img
+        src="/landing/chapter-4.jpg"
+        alt=""
+        className="absolute inset-0 -z-10 h-full w-full object-cover opacity-55"
+      />
+      <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ink/40 via-ink/60 to-ink" />
+      <div className="film-grain absolute inset-0 -z-10" />
 
-          <div className="mt-10 space-y-4 text-sm text-white/70">
-            <div className="rounded-3xl border border-white/10 bg-black/25 px-4 py-4">
-              Crowd input from SMS and QR form lands in one ranked venue-safe queue.
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-black/25 px-4 py-4">
-              The current loop stays live until the next completed remix is ready to crossfade.
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-black/25 px-4 py-4">
-              DJ controls stay simple: pause selection, trigger fallback, skip to next.
-            </div>
-          </div>
-        </section>
+      <header className="px-4 py-5 sm:px-8 lg:px-12">
+        <Link href="/" className="inline-flex min-h-11 items-center gap-1.5 font-display text-2xl leading-none text-haze">
+          Dream <em>Sequence</em>
+        </Link>
+      </header>
 
-        <section className="p-8 lg:p-10">
+      <div className="flex flex-1 items-center justify-center px-4 pb-16 pt-6 sm:px-8 lg:justify-end lg:px-24">
+        <section className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-[#111114]/95 p-6 shadow-glow sm:p-8">
           <LoginForm />
         </section>
       </div>

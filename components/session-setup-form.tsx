@@ -153,7 +153,7 @@ export function SessionSetupForm() {
       <div className="bg-aurora px-6 py-8 sm:px-8 sm:py-10">
         <p className="font-mono text-xs uppercase tracking-[0.28em] text-plasma">The first scene is yours</p>
         <label className="mt-4 block">
-          <span className="block text-2xl font-semibold text-white sm:text-3xl">How does your story begin?</span>
+          <span className="block font-display text-4xl leading-tight text-white sm:text-3xl">How does your story begin?</span>
           <span id="story-prompt-help" className="mt-3 block max-w-2xl text-sm leading-7 text-white/65">
             Set the scene, introduce a character, or start with something impossible. Your audience decides what happens next.
           </span>

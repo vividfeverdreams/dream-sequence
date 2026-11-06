@@ -9,8 +9,8 @@ export default async function NewSessionPage() {
     <main className="mx-auto min-h-screen max-w-4xl px-6 py-8 lg:px-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DREAM SEQUENCE</p>
-          <h1 className="mt-4 text-4xl font-semibold text-white">Start a story. See where it goes.</h1>
+          <p className="font-display text-2xl leading-none text-haze">Dream <em>Sequence</em></p>
+          <h1 className="mt-4 font-display text-5xl leading-none text-haze">Start a story. See where it goes.</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">
             Write the opening scene, choose your clip settings, and invite your audience to shape what comes next.
           </p>

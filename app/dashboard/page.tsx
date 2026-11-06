@@ -19,8 +19,8 @@ export default async function DashboardPage() {
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-8 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-plasma">DREAM SEQUENCE</p>
-            <h1 className="mt-4 text-4xl font-semibold text-white">Every story starts somewhere.</h1>
+            <p className="font-display text-2xl leading-none text-haze">Dream <em>Sequence</em></p>
+            <h1 className="mt-4 font-display text-5xl leading-none text-haze">Every story starts somewhere.</h1>
             <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">
               Describe the opening scene. Your audience decides what happens next.
             </p>

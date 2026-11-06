@@ -130,7 +130,7 @@ export function PublicSubmissionForm({ sessionCode, disabled = false, disabledMe
   return (
     <form onSubmit={handleSubmit} className="space-y-5" aria-busy={submitting}>
       <label className="block">
-        <span className="block text-3xl font-semibold leading-tight text-white sm:text-4xl">What happens next?</span>
+        <span className="block font-display text-5xl leading-none text-haze">What happens next?</span>
         <span id="continuation-help" className="mt-3 block text-sm leading-7 text-white/65">A twist, a new character, a whole new world. Write the next moment in the story.</span>
         <textarea
           required

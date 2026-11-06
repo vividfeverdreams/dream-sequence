@@ -42,9 +42,9 @@ export function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-md">
-      <p className="font-mono text-xs uppercase tracking-[0.32em] text-white/45">DJ Login</p>
-      <h2 className="mt-4 text-3xl font-semibold text-white">Open the control deck.</h2>
+    <div>
+      <h1 className="font-display text-5xl leading-none text-haze">Welcome back.</h1>
+      <p className="mt-3 text-[15px] leading-6 text-white/70">Log in to start a story or run your show.</p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5">
         <label className="block">
@@ -77,9 +77,9 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-full bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-12 w-full rounded-full bg-plasma px-6 py-3 text-[15px] font-semibold text-ink transition hover:bg-[#d8ff5e] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isSubmitting ? "Signing In..." : "Sign In"}
+          {isSubmitting ? "Logging in..." : "Log in"}
         </button>
       </form>
     </div>
