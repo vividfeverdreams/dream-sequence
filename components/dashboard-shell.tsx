@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { DashboardAudioSync } from "@/components/dashboard-audio-sync";
 import { DashboardDisclosure } from "@/components/dashboard-disclosure";
-import type { OpenAiConnectionStatus } from "@/lib/openai-key-store";
 import type { GoogleConnectionStatus } from "@/lib/google-key-store";
 import { getAccountRemixPath } from "@/lib/remix-links";
 import { getAudienceSubmissionNickname } from "@/lib/remix-transition";
@@ -23,7 +22,6 @@ import { getVideoModerationDiagnosticLabel } from "@/lib/video-moderation";
 type DashboardShellProps = {
   initialSnapshot: NonNullable<SessionSnapshot>;
   currentUserName: string;
-  initialOpenAiStatus: OpenAiConnectionStatus;
   initialGoogleStatus: GoogleConnectionStatus;
   audioSyncRelayToken: string;
 };
@@ -134,7 +132,6 @@ export async function requestDashboardShowFullscreen(
 export function DashboardShell({
   initialSnapshot,
   currentUserName,
-  initialOpenAiStatus,
   initialGoogleStatus,
   audioSyncRelayToken
 }: DashboardShellProps) {
@@ -165,7 +162,6 @@ export function DashboardShell({
   const submittedWordmarkOpacityRef = useRef(initialSnapshot.session.wordmarkOpacity);
   const submittedWordmarkSizeRef = useRef(initialSnapshot.session.wordmarkSize);
   const deferredSnapshot = useDeferredValue(snapshot);
-  const openAiStatus = initialOpenAiStatus;
   const googleStatus = initialGoogleStatus;
 
   const session = deferredSnapshot.session;
@@ -705,7 +701,7 @@ export function DashboardShell({
 
       <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Session Status" value={session.status} hint={playback?.status ?? "idle"} />
-        <MetricCard label="Approved Queue" value={String(deferredSnapshot.queueHealth.approvedCount)} hint="scored safe prompts" />
+        <MetricCard label="Approved Queue" value={String(deferredSnapshot.queueHealth.approvedCount)} hint="ideas waiting for video" />
         <MetricCard label="Render State" value={deferredSnapshot.queueHealth.waitingOnRender ? "busy" : "clear"} hint={`${deferredSnapshot.queueHealth.renderingCount} rendering`} />
         <MetricCard label="Ready Assets" value={String(deferredSnapshot.queueHealth.readyAssetCount)} hint="live or queued visuals" />
       </section>
@@ -771,7 +767,7 @@ export function DashboardShell({
                 assetTitle={playback?.nextAsset?.title ?? "No queued remix"}
                 prompt={
                   playback?.nextAsset?.promptText ??
-                  "When a safe crowd render completes, it will preload here and crossfade into the show."
+                  "When a crowd render completes, it will preload here and crossfade into the show."
                 }
                 status={playback?.nextAsset ? "ready to fade" : "open slot"}
               />
@@ -1143,7 +1139,7 @@ export function DashboardShell({
                       <div className="rounded-3xl border border-white/8 bg-white/[0.03] px-4 py-3">
                         <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-white/45">Winning Prompt</p>
                         <p className="mt-2 text-sm leading-6 text-white/68">
-                          {submission.rankingResult?.winningPrompt ?? submission.approvalReason ?? "Waiting for assessment"}
+                          {submission.rankingResult?.winningPrompt ?? submission.approvalReason ?? "Waiting for the queue"}
                         </p>
                       </div>
                     </div>
@@ -1158,7 +1154,7 @@ export function DashboardShell({
           <DashboardDisclosure
             eyebrow="System"
             title="AI Environment"
-            description="Current video generation and OpenAI text-scoring configuration."
+            description="Current video generation configuration."
             status={googleStatus.configured ? "Connected" : "Setup needed"}
             statusActive={googleStatus.configured}
           >
@@ -1169,7 +1165,6 @@ export function DashboardShell({
             </p>
             <p className="mt-3 text-sm leading-7 text-white/60">
               Each new clip starts from the last frame of the previous scene.
-              {openAiStatus.configured ? " AI moderation and story selection are active." : " Built-in moderation and story selection are active."}
             </p>
           </DashboardDisclosure>
 

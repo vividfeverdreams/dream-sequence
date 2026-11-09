@@ -95,7 +95,6 @@ describe("dashboard fullscreen show", () => {
     const markup = renderToStaticMarkup(React.createElement(DashboardShell, {
       initialSnapshot: snapshot,
       currentUserName: "Story host",
-      initialOpenAiStatus: { configured: false, source: "none", last4: null },
       initialGoogleStatus: { configured: false, provider: "fal", source: "none", last4: null },
       audioSyncRelayToken: ""
     }));

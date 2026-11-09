@@ -14,8 +14,7 @@ const mocks = vi.hoisted(() => {
     createRanking: vi.fn(),
     findTwitchConnection: vi.fn(),
     findTwitchDelivery: vi.fn(),
-    generatePrompt: vi.fn(),
-    assessSubmission: vi.fn()
+    buildIdleStoryBeat: vi.fn()
   };
   const tx = {
     dJSession: {
@@ -51,12 +50,9 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/story-continuation-prompt", () => ({
-  generateStoryContinuationPrompt: mocks.generatePrompt
+  buildIdleStoryBeat: mocks.buildIdleStoryBeat
 }));
 
-vi.mock("@/lib/ai-assessment", () => ({
-  assessSubmission: mocks.assessSubmission
-}));
 
 import {
   automaticSubmissionSource,
@@ -67,7 +63,7 @@ import {
 
 const nowMs = Date.parse("2026-09-16T12:01:00.000Z");
 const generatedPrompt = "The fox discovers that the pearl shell unfolds into a glowing boat.";
-const renderPrompt = "Continue from the source frame: the fox boards a glowing boat, in teal and ember.";
+const renderPrompt = generatedPrompt;
 
 function sessionFixture() {
   return {
@@ -105,20 +101,6 @@ function sessionFixture() {
   };
 }
 
-function assessmentFixture() {
-  return {
-    decision: "approved",
-    score: 90,
-    flags: [],
-    explanation: "Safe next story event.",
-    approvalReason: "Advances the current scene.",
-    noveltyScore: 91,
-    cohesionScore: 89,
-    remixDeltaScore: 90,
-    winningPrompt: renderPrompt
-  };
-}
-
 describe("idle story continuation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -136,8 +118,7 @@ describe("idle story continuation", () => {
     mocks.createRanking.mockResolvedValue({ id: "ranking-1" });
     mocks.findTwitchConnection.mockResolvedValue({ twitchUserId: "channel-1" });
     mocks.findTwitchDelivery.mockResolvedValue(null);
-    mocks.generatePrompt.mockResolvedValue(generatedPrompt);
-    mocks.assessSubmission.mockResolvedValue(assessmentFixture());
+    mocks.buildIdleStoryBeat.mockReturnValue(generatedPrompt);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
@@ -152,11 +133,11 @@ describe("idle story continuation", () => {
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
     expect(mocks.createSubmission).not.toHaveBeenCalled();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
 
     vi.setSystemTime(nowMs);
     expect(await createIdleStoryContinuation("session-1")).toEqual({ id: "automatic-1", prompt: renderPrompt });
-    expect(mocks.generatePrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledTimes(1);
   });
 
   it.each(["web", "sms", "twitch"])("resets the minute for a later %s audience input", async (source) => {
@@ -167,7 +148,7 @@ describe("idle story continuation", () => {
     vi.setSystemTime(inputAt.getTime() + 59_999);
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
 
     vi.setSystemTime(inputAt.getTime() + 60_000);
     expect(await createIdleStoryContinuation("session-1")).toEqual({ id: "automatic-1", prompt: renderPrompt });
@@ -188,13 +169,13 @@ describe("idle story continuation", () => {
 
     vi.setSystemTime(nowMs + 59_999);
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.generatePrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(nowMs + 60_000);
     mocks.countSubmissions.mockResolvedValue(2);
     expect(await createIdleStoryContinuation("session-1")).not.toBeNull();
-    expect(mocks.generatePrompt).toHaveBeenCalledTimes(2);
-    expect(mocks.generatePrompt.mock.calls[1][0].continuationNumber).toBe(2);
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledTimes(2);
+    expect(mocks.buildIdleStoryBeat.mock.calls[1][0].continuationNumber).toBe(2);
     expect(mocks.createSubmission.mock.calls[1][0].data).toMatchObject({
       createdAt: new Date(nowMs + 60_000),
       messageSid: `automatic:session-1:${nowMs}`
@@ -221,7 +202,7 @@ describe("idle story continuation", () => {
     vi.setSystemTime(inputReceivedAt.getTime() + 59_999);
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
 
     vi.setSystemTime(inputReceivedAt.getTime() + 60_000);
     expect(await createIdleStoryContinuation("session-1")).not.toBeNull();
@@ -266,7 +247,7 @@ describe("idle story continuation", () => {
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
     expect(mocks.createSubmission).not.toHaveBeenCalled();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
   });
 
   it.each(["submitted", "approved"])("gives an existing %s audience idea priority", async (status) => {
@@ -278,7 +259,7 @@ describe("idle story continuation", () => {
       select: { id: true }
     });
     expect(mocks.claimSession).not.toHaveBeenCalled();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
   });
 
   it("does not generate after losing the shared session claim", async () => {
@@ -286,7 +267,7 @@ describe("idle story continuation", () => {
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
     expect(mocks.createSubmission).not.toHaveBeenCalled();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
   });
 
   it("permits only one of two workers to create the next draft", async () => {
@@ -300,7 +281,7 @@ describe("idle story continuation", () => {
     expect(results.filter(Boolean)).toHaveLength(1);
     expect(mocks.claimSession).toHaveBeenCalledTimes(2);
     expect(mocks.createSubmission).toHaveBeenCalledTimes(1);
-    expect(mocks.generatePrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledTimes(1);
     expect(mocks.claimSession).toHaveBeenCalledWith({
       where: { id: "session-1", updatedAt: sessionFixture().updatedAt },
       data: { updatedAt: new Date(nowMs) }
@@ -321,7 +302,7 @@ describe("idle story continuation", () => {
     mocks.findStillIdleSession.mockResolvedValue(null);
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.generatePrompt).toHaveBeenCalledOnce();
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledOnce();
     expect(mocks.updateSubmissions).toHaveBeenLastCalledWith({
       where: { id: "automatic-1", status: "submitted" },
       data: expect.objectContaining({
@@ -374,7 +355,7 @@ describe("idle story continuation", () => {
     mocks.updateSubmissions.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 0 });
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.generatePrompt).toHaveBeenCalledOnce();
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledOnce();
     expect(mocks.createModeration).not.toHaveBeenCalled();
     expect(mocks.createRanking).not.toHaveBeenCalled();
   });
@@ -421,30 +402,12 @@ describe("idle story continuation", () => {
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
     expect(mocks.updateSubmissions).not.toHaveBeenCalled();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
   });
 
-  it("persists moderation rejection without making a render candidate", async () => {
-    mocks.assessSubmission.mockResolvedValue({
-      ...assessmentFixture(), decision: "rejected", score: 0,
-      flags: ["blocked-term"], approvalReason: "Rejected by venue-safe checks."
-    });
-
-    expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.updateSubmissions).toHaveBeenLastCalledWith({
-      where: { id: "automatic-1", status: "submitted" },
-      data: expect.objectContaining({ status: "rejected", approvalReason: "Rejected by venue-safe checks." })
-    });
-    expect(mocks.createModeration).toHaveBeenCalledWith({
-      data: expect.objectContaining({ submissionId: "automatic-1", decision: "rejected", flags: '["blocked-term"]' })
-    });
-  });
-
-  it.each(["context", "generation", "assessment", "persistence"])("marks the draft failed when %s fails after claiming", async (stage) => {
+  it.each(["context", "persistence"])("marks the draft failed when %s fails after claiming", async (stage) => {
     const error = new Error("Private provider or storage details");
     if (stage === "context") mocks.findRecentClips.mockRejectedValue(error);
-    if (stage === "generation") mocks.generatePrompt.mockRejectedValue(error);
-    if (stage === "assessment") mocks.assessSubmission.mockRejectedValue(error);
     if (stage === "persistence") mocks.createModeration.mockRejectedValue(error);
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
@@ -458,7 +421,7 @@ describe("idle story continuation", () => {
     expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain(error.message);
   });
 
-  it("keeps the generated original for display and the assessed version for rendering", async () => {
+  it("keeps the same built-in beat for display and rendering", async () => {
     expect(await createIdleStoryContinuation("session-1")).toEqual({ id: "automatic-1", prompt: renderPrompt });
 
     expect(mocks.createSubmission).toHaveBeenCalledWith({
@@ -489,31 +452,14 @@ describe("idle story continuation", () => {
       "The fox arrives in an underwater city.",
       "The fox discovers an empty pearl shell."
     ];
-    const creativeContext = {
-      userId: "user-1",
-      artistName: "Dream Artist",
-      trackName: "Dream Track",
-      basePrompt: sessionFixture().basePrompt,
-      creativeBible: "A continuous dream story.",
-      allowedMotifs: "",
-      bannedTerms: "",
-      colorPalette: "teal, ember",
-      motionRules: "",
-      artistControlEnabled: true,
-      venueSafeMode: true
-    };
-    expect(mocks.generatePrompt).toHaveBeenCalledWith({ session: creativeContext, recentPrompts, continuationNumber: 3 });
-    expect(mocks.assessSubmission).toHaveBeenCalledWith({
-      session: creativeContext, submissionText: generatedPrompt, recentWinningPrompts: recentPrompts
-    });
-    expect(mocks.generatePrompt.mock.calls[0][0].session).not.toHaveProperty("submissions");
-    expect(mocks.generatePrompt.mock.calls[0][0].session).not.toHaveProperty("playbackState");
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledWith({ recentPrompts, continuationNumber: 3 });
+    expect(mocks.buildIdleStoryBeat.mock.calls[0][0]).not.toHaveProperty("session");
   });
 
   it("uses the current source clip for context when there are no completed render records", async () => {
     expect(await createIdleStoryContinuation("session-1")).not.toBeNull();
 
-    expect(mocks.generatePrompt).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledWith(expect.objectContaining({
       recentPrompts: [sessionFixture().playbackState.currentAsset.promptText]
     }));
   });
@@ -539,7 +485,7 @@ describe("idle story continuation", () => {
       }
     }));
     expect(mocks.createSubmission).not.toHaveBeenCalled();
-    expect(mocks.generatePrompt).not.toHaveBeenCalled();
+    expect(mocks.buildIdleStoryBeat).not.toHaveBeenCalled();
   });
 
   it("continues a Twitch story when the delivery inbox is empty", async () => {
@@ -547,7 +493,7 @@ describe("idle story continuation", () => {
 
     expect(await createIdleStoryContinuation("session-1")).not.toBeNull();
     expect(mocks.findTwitchDelivery).toHaveBeenCalled();
-    expect(mocks.generatePrompt).toHaveBeenCalledOnce();
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledOnce();
   });
 
   it("discards a generated draft when a Twitch delivery arrives during generation", async () => {
@@ -555,7 +501,7 @@ describe("idle story continuation", () => {
     mocks.findTwitchDelivery.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "delivery-new", status: "pending" });
 
     expect(await createIdleStoryContinuation("session-1")).toBeNull();
-    expect(mocks.generatePrompt).toHaveBeenCalledOnce();
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledOnce();
     expect(mocks.findTwitchDelivery).toHaveBeenCalledTimes(2);
     expect(mocks.updateSubmissions).toHaveBeenLastCalledWith({
       where: { id: "automatic-1", status: "submitted" },
@@ -587,6 +533,6 @@ describe("idle story continuation", () => {
 
     const result = await createIdleStoryContinuation("session-1");
     expect(Boolean(result)).toBe(shouldContinue);
-    expect(mocks.generatePrompt).toHaveBeenCalledTimes(shouldContinue ? 1 : 0);
+    expect(mocks.buildIdleStoryBeat).toHaveBeenCalledTimes(shouldContinue ? 1 : 0);
   });
 });

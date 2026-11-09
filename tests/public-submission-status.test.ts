@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { participantImageModerationBlockedReason } from "@/lib/image-moderation";
 import { videoModerationBlockedReason } from "@/lib/video-moderation";
 
 const mocks = vi.hoisted(() => ({
@@ -49,7 +48,7 @@ describe("public provider-moderation status", () => {
       rankingResult: null,
       moderationResult: {
         decision: "approved",
-        explanation: "The image passed intake moderation."
+        explanation: "Accepted as written."
       }
     });
     mocks.findRenderJobs.mockResolvedValue([
@@ -75,31 +74,12 @@ describe("public provider-moderation status", () => {
         detail: expect.stringContaining("attached image")
       })
     );
-    expect(status?.detail).toContain("did not count against your device");
+    expect(status?.detail).toContain("You can submit another idea.");
     expect(status).not.toHaveProperty("moderationBlockCount");
     expect(status).not.toHaveProperty("blocksRemaining");
     expect(mocks.countAuditEvents).not.toHaveBeenCalled();
   });
 
-  it("keeps independently rejected images on the participant strike path", async () => {
-    mocks.findSubmission.mockResolvedValue({
-      ...(await mocks.findSubmission()),
-      approvalReason: `${participantImageModerationBlockedReason} Categories: sexual.`
-    });
-    mocks.findRenderJobs.mockResolvedValue([]);
-    mocks.countAuditEvents.mockResolvedValue(2);
-
-    const status = await getPublicSubmissionStatus("LIVE01", "submission-1");
-
-    expect(status).toEqual(
-      expect.objectContaining({
-        state: "blocked",
-        moderationBlockCount: 2,
-        blocksRemaining: 1
-      })
-    );
-    expect(mocks.countAuditEvents).toHaveBeenCalledOnce();
-  });
 
   it("reports exhausted video generation as a terminal failure", async () => {
     mocks.findSubmission.mockResolvedValue({

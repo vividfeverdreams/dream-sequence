@@ -1,6 +1,6 @@
 # DREAM SEQUENCE
 
-A shared visual story for live shows and Twitch streams. The host describes how the story begins, selects a clip length and quality, and chooses QR-code or Twitch audience input. Viewers answer **What happens next?**. Approved ideas enter a ranked queue; H3 Max creates the next story beat from the previous generated clip’s final frame.
+A shared visual story for live shows and Twitch streams. The host describes how the story begins, selects a clip length and quality, and chooses QR-code or Twitch audience input. Viewers answer **What happens next?**. Ideas enter the queue as written; H3 Max creates the next story beat from the previous generated clip’s final frame.
 
 ## Experience
 
@@ -8,7 +8,7 @@ A shared visual story for live shows and Twitch streams. The host describes how 
 - H3 Max through fal.ai is the only video-generation provider.
 - Simple 5-, 10-, and 15-second choices; the API accepts whole seconds from 5 through 15.
 - 480P, 768P (default), and 1080P quality. The default clip length is 5 seconds. fal describes 1080P as refinement from native 768P.
-- QR page: original free-text continuation, optional nickname, moderation, device limits, and progress tracking.
+- QR page: original free-text continuation, optional nickname, device limits, and progress tracking.
 - Twitch mode: the host connects a Twitch account, and viewers type `!next` followed by their idea. The contributor's Twitch username appears with the prompt during playback. Other chat is ignored. See [Twitch setup](docs/TWITCH_SETUP.md).
 - After a minute without new audience input, the story can generate its own continuation. Audience ideas take priority, and automatic continuation stops when selection is paused or the story is stopped.
 - Existing projection, audio-reactive visual effects, overlays, and manual playback controls remain available. Playback continuously cycles through the latest three videos in chronological order, wrapping back to the first at clip boundaries. Newly ready clips take priority, then join the rolling three-video loop. New story clips continue from the latest generated clip's final frame regardless of which video is currently playing.
@@ -21,9 +21,11 @@ This provides a visual starting anchor, not a guarantee of perfect temporal cont
 
 Completed MP4 files are copied to Supabase Storage for durable playback. The queue serializes generation per session and uses the most recently generated clip as the parent even if the host manually replays older footage. API queue submission is not retried in-place after an ambiguous network error. Status checks and output persistence can retry without submitting another generation.
 
-Audience receipts return after moderation and saving the idea; video preparation runs afterward. Text assessment has a 15-second timeout before using the existing local safety check. Twitch intake saves each batch before starting video preparation, and render reconciliation does not wait for chat intake. Rate limits preserve the typed idea and show a clear rejection; exhausted render retries show a final failure instead of an endless queue state.
+FAL_KEY is the only AI key. Crowd text is sent as typed, with outer whitespace trimmed for continuations and no added instructions. The app does not use text AI or filter ideas. fal prompt expansion and the optional safety checker are disabled; the provider can still refuse a clip.
 
-Automatic continuations use the current story context and join the same moderated generation queue as audience ideas. New audience input resets the inactivity timer. The live dashboard checks regularly, while the authenticated scheduler checks active stories each minute and keeps them progressing when the dashboard is closed, including when only the show window remains open. A scheduler-only continuation starts on the first eligible check after the minute of inactivity; generation and an occupied queue can add delay. With more than ten active stories, the scheduler rotates through batches of ten.
+Audience receipts return after saving the idea; video preparation runs afterward. Twitch intake saves each batch before starting video preparation, and render reconciliation does not wait for chat intake. Per-device rate limits preserve the typed idea and show a clear message; exhausted render retries show a final failure instead of an endless queue state.
+
+After a quiet minute, automatic continuations rotate through eight built-in event sentences, avoiding recent ones. Audience input takes priority and resets the inactivity timer. The live dashboard checks regularly, while the authenticated scheduler checks active stories each minute and keeps them progressing when the dashboard is closed, including when only the show window remains open. A scheduler-only continuation starts on the first eligible check after the minute of inactivity; generation and an occupied queue can add delay. With more than ten active stories, the scheduler rotates through batches of ten.
 
 If the opening video finishes at fal but fails during playback preparation, the dashboard offers **Recover First Video**. This retries preparation of the same saved result and never submits a replacement generation. Completion diagnostics identify the failed preparation step without logging prompts, media URLs, or credentials.
 
@@ -51,7 +53,6 @@ Required:
 
 Optional:
 
-- `OPENAI_API_KEY` / `OPENAI_TEXT_MODEL`: story moderation, ranking, and automatic continuation prompts. Without a key, deterministic moderation and varied fallback story events are used. These are text operations; all video generation uses H3 Max.
 - Twitch values from `.env.example` and [the setup guide](docs/TWITCH_SETUP.md).
 
 No demo-video or alternate-generation-provider fallback is used when `FAL_KEY` is missing. The dashboard reports that video generation needs configuration.

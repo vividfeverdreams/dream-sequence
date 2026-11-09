@@ -80,7 +80,7 @@ export function AudienceMock() {
 
 export function QueueMock() {
   const steps = [
-    { label: "Moderated", detail: "Checked before it can reach the screen", state: "done" },
+    { label: "Received", detail: "Sent exactly as it was typed", state: "done" },
     { label: "Generating", detail: "Starts from the last frame on screen", state: "active" },
     { label: "Up next", detail: "Plays as soon as it's ready", state: "waiting" }
   ];

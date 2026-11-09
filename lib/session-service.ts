@@ -742,11 +742,7 @@ export async function queueFallbackRemix(sessionId: string, userId: string) {
 export function buildFallbackRemixPrompt(session: {
   basePrompt: string;
 }) {
-  return [
-    "Continue the story with one new, natural event, starting from the current final frame.",
-    `Story opening for context only: ${session.basePrompt}`,
-    "Preserve the characters and visual style. Advance the action without restarting the opening."
-  ].join(" ");
+  return session.basePrompt;
 }
 
 async function requireOwnedSession(sessionId: string, userId: string) {

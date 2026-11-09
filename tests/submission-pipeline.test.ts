@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => {
     updateSubmission: vi.fn(),
     createModeration: vi.fn(),
     createRanking: vi.fn(),
-    assessSubmission: vi.fn(),
     checkSubmissionRateLimit: vi.fn(),
     recordAuditEvent: vi.fn(),
     claimSession: vi.fn(),
@@ -108,10 +107,6 @@ vi.mock("@/lib/audit", () => ({
   recordAuditEvent: mocks.recordAuditEvent
 }));
 
-vi.mock("@/lib/ai-assessment", () => ({
-  assessSubmission: mocks.assessSubmission
-}));
-
 vi.mock("@/lib/rate-limit", () => ({
   checkSubmissionRateLimit: mocks.checkSubmissionRateLimit
 }));
@@ -131,11 +126,7 @@ import {
   readyPlaybackStallMs,
   shouldRecoverReadyPlaybackAsset
 } from "@/lib/playback-transition";
-import {
-  providerCameraContinuityRequirement,
-  providerOpeningFrameContinuityRequirement,
-  providerSeamlessLoopRequirement
-} from "@/lib/video-prompt-budget";
+
 
 describe("submission receipt scheduling", () => {
   const input = {
@@ -154,11 +145,7 @@ describe("submission receipt scheduling", () => {
     });
     mocks.createSubmission.mockResolvedValue({ id: "submission-1" });
     mocks.checkSubmissionRateLimit.mockResolvedValue({ allowed: true });
-    mocks.assessSubmission.mockResolvedValue({
-      decision: "approved", score: 90, flags: [], explanation: "Safe story idea.",
-      approvalReason: "Approved.", noveltyScore: 90, cohesionScore: 90, remixDeltaScore: 90,
-      winningPrompt: input.prompt
-    });
+
   });
 
   it("returns a persisted receipt without waiting for provider setup", async () => {
@@ -176,7 +163,7 @@ describe("submission receipt scheduling", () => {
     expect(mocks.recordAuditEvent).toHaveBeenCalledWith({
       type: "story.input_received", summary: "Received a new audience story idea", sessionId: "session-1"
     });
-    expect(mocks.recordAuditEvent.mock.invocationCallOrder[0]).toBeLessThan(mocks.assessSubmission.mock.invocationCallOrder[0]);
+    expect(mocks.recordAuditEvent.mock.invocationCallOrder[0]).toBeLessThan(mocks.createSubmission.mock.invocationCallOrder[0]);
     expect(mocks.claimSubmission).toHaveBeenCalledWith({
       where: { sessionId: "session-1", source: "automatic", status: { in: ["submitted", "approved"] }, selectedAt: null },
       data: { status: "rejected", approvalReason: expect.stringContaining("new audience idea") }
@@ -198,16 +185,20 @@ describe("submission receipt scheduling", () => {
     }
   });
 
-  it("does not schedule a rejected idea", async () => {
-    mocks.assessSubmission.mockResolvedValue({
-      decision: "rejected", score: 0, flags: ["blocked-term"], explanation: "Unsafe request.",
-      approvalReason: "Rejected.", noveltyScore: 0, cohesionScore: 0, remixDeltaScore: 0,
-      winningPrompt: input.prompt
-    });
+  it("accepts previously filtered words and preserves the original audience text", async () => {
+    const prompt = "  A celebrity arrives.\nA  river of blood turns into flowers!  ";
     const scheduleSelection = vi.fn();
-
-    expect(await ingestSubmission(input, { scheduleSelection })).toMatchObject({ status: "rejected" });
-    expect(scheduleSelection).not.toHaveBeenCalled();
+    expect(await ingestSubmission({ ...input, prompt }, { scheduleSelection })).toMatchObject({ status: "approved" });
+    expect(mocks.createSubmission).toHaveBeenCalledWith({
+      data: expect.objectContaining({ rawText: prompt })
+    });
+    expect(mocks.createModeration).toHaveBeenCalledWith({
+      data: expect.objectContaining({ decision: "approved", score: 100, flags: "[]", explanation: "Accepted as written." })
+    });
+    expect(mocks.createRanking).toHaveBeenCalledWith({
+      data: expect.objectContaining({ winningPrompt: prompt.trim(), score: 100 })
+    });
+    expect(scheduleSelection).toHaveBeenCalledWith("session-1");
   });
 
   it("returns the saved receipt and schedules rendering even if the activity log fails", async () => {
@@ -688,12 +679,9 @@ describe("submission render queue", () => {
     await queueAutomatedRender("session-1", "submission-next", "remix", "A shortened assessment should not replace the story");
 
     const finalProviderPrompt = mocks.startVideoRender.mock.calls[0][0].prompt as string;
-    expect(finalProviderPrompt).toContain(rawPrompt);
-    expect(finalProviderPrompt).toContain(opening);
-    expect(finalProviderPrompt).toContain("Story opening (background only; do not restart)");
-    expect(finalProviderPrompt).toContain(providerOpeningFrameContinuityRequirement);
-    expect(finalProviderPrompt).toContain(providerSeamlessLoopRequirement);
-    expect(finalProviderPrompt).toContain("do not loop back");
+    expect(finalProviderPrompt).toBe(rawPrompt);
+    expect(mocks.createJob).toHaveBeenCalledWith({ data: expect.objectContaining({ promptText: rawPrompt }) });
+    expect(mocks.createAsset).toHaveBeenCalledWith({ data: expect.objectContaining({ promptText: rawPrompt }) });
     expect(finalProviderPrompt).not.toContain("Venue-safe:");
     expect(finalProviderPrompt).not.toContain("OBSOLETE_CAMERA_RULE");
     expect(finalProviderPrompt).not.toContain("A shortened assessment");
@@ -722,11 +710,12 @@ describe("submission render queue", () => {
     await queueAutomatedRender("session-1", null, "seed", "A stale legacy draft");
 
     const prompt = mocks.startVideoRender.mock.calls[0][0].prompt as string;
-    expect(prompt).toContain(opening.trim());
+    expect(prompt).toBe(opening);
+    expect(mocks.createJob).toHaveBeenCalledWith({ data: expect.objectContaining({ promptText: opening }) });
+    expect(mocks.createAsset).toHaveBeenCalledWith({ data: expect.objectContaining({ promptText: opening }) });
     expect(prompt).not.toContain("A stale legacy draft");
     expect(prompt).not.toContain("OBSOLETE_CAMERA_RULE");
     expect(prompt).not.toContain("Venue-safe:");
-    expect(prompt).toContain(providerSeamlessLoopRequirement);
     expect(mocks.findGenerationHead).not.toHaveBeenCalled();
     expect(mocks.findSubmission).not.toHaveBeenCalled();
     expect(mocks.claimSubmission).not.toHaveBeenCalled();
@@ -746,9 +735,7 @@ describe("submission render queue", () => {
     await queueAutomatedRender("session-1", null, "remix", "The door opens into an ember cathedral");
 
     const prompt = mocks.startVideoRender.mock.calls[0][0].prompt as string;
-    expect(prompt).toContain("What happens next: The door opens into an ember cathedral");
-    expect(prompt).toContain(providerOpeningFrameContinuityRequirement);
-    expect(prompt).toContain(providerCameraContinuityRequirement);
+    expect(prompt).toBe("The door opens into an ember cathedral");
     expect(mocks.findSubmission).not.toHaveBeenCalled();
     expect(mocks.claimSubmission).not.toHaveBeenCalled();
   });

@@ -70,7 +70,7 @@ export function getVideoModerationDiagnosticLabel(
 ) {
   switch (diagnostic) {
     case "input_text":
-      return "The generated prompt may have triggered the provider safety filter.";
+      return "The submitted prompt may have triggered the provider safety filter.";
     case "input_image":
       return "An attached image may have triggered the provider safety filter.";
     case "input_video":

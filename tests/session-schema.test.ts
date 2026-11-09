@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   controlSchema,
   publicSubmissionSchema,
-  sessionFormSchema,
-  sessionIdeaSchema,
-  sessionPrefillSchema
+  sessionFormSchema
 } from "@/lib/schemas";
 
 const validSession = {
@@ -40,65 +38,6 @@ describe("story setup", () => {
   it("supports Twitch as a distinct input mode", () => {
     expect(sessionFormSchema.parse({ ...validSession, audienceMode: "twitch" }).audienceMode).toBe("twitch");
     expect(sessionFormSchema.safeParse({ ...validSession, audienceMode: "discord" }).success).toBe(false);
-  });
-});
-
-describe("sessionIdeaSchema", () => {
-  it("accepts and trims a plain-English session idea", () => {
-    const result = sessionIdeaSchema.safeParse({ idea: "  Blue fog with slow camera movement.  " });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.idea).toBe("Blue fog with slow camera movement.");
-    }
-  });
-
-  it("asks for more detail when the idea is too short", () => {
-    const result = sessionIdeaSchema.safeParse({ idea: "AI" });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe("Tell us a little more about the session you want to create.");
-    }
-  });
-});
-
-describe("sessionPrefillSchema", () => {
-  it("leaves camera behavior open unless the artist explicitly directs it", () => {
-    expect(sessionPrefillSchema.shape.motionRules.description).toBe(
-      "Artist-directed rhythm and transition guidance. Include a camera style only when the user's idea explicitly asks for one; otherwise leave camera behavior unrestricted."
-    );
-  });
-
-  it("accepts an AI draft containing every editable creative field", () => {
-    const result = sessionPrefillSchema.safeParse({
-      name: validSession.name,
-      artistName: validSession.artistName,
-      trackName: validSession.trackName,
-      creativeBible: validSession.creativeBible,
-      allowedMotifs: validSession.allowedMotifs,
-      bannedTerms: validSession.bannedTerms,
-      colorPalette: validSession.colorPalette,
-      motionRules: validSession.motionRules,
-      basePrompt: validSession.basePrompt
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects a draft that omits a required answer", () => {
-    const result = sessionPrefillSchema.safeParse({
-      name: validSession.name,
-      artistName: validSession.artistName,
-      trackName: validSession.trackName,
-      creativeBible: validSession.creativeBible,
-      allowedMotifs: validSession.allowedMotifs,
-      bannedTerms: validSession.bannedTerms,
-      colorPalette: validSession.colorPalette,
-      motionRules: validSession.motionRules
-    });
-
-    expect(result.success).toBe(false);
   });
 });
 

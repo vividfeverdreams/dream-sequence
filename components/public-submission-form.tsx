@@ -12,7 +12,7 @@ type PublicSubmissionFormProps = {
 type TrackedSubmissionStatus = PublicSubmissionStatus;
 
 const terminalStates = new Set<TrackedSubmissionStatus["state"]>([
-  "banned", "blocked", "failed", "live", "played", "provider-blocked", "rejected"
+  "blocked", "failed", "live", "played", "provider-blocked", "rejected"
 ]);
 const participantDeviceStorageKey = "dream-sequence:participant-device";
 const participantNicknameStorageKey = "dream-sequence:participant-nickname";
@@ -22,7 +22,6 @@ type SubmissionResponse = {
   error?: string;
   status?: string;
   submissionId?: string;
-  moderationBlockCount?: number;
   prompt?: string;
 };
 
@@ -36,8 +35,7 @@ export function PublicSubmissionForm({ sessionCode, disabled = false, disabledMe
   const [trackedSubmissionId, setTrackedSubmissionId] = useState<string | null>(null);
   const [trackedStatus, setTrackedStatus] = useState<TrackedSubmissionStatus | null>(null);
   const activeSubmissionId = useRef<string | null>(null);
-  const participantBanned = trackedStatus?.state === "banned";
-  const formDisabled = disabled || participantBanned || submitting;
+  const formDisabled = disabled || submitting;
 
   useEffect(() => {
     const savedNickname = readParticipantStorage(participantNicknameStorageKey)?.trim() ?? "";
@@ -84,12 +82,8 @@ export function PublicSubmissionForm({ sessionCode, disabled = false, disabledMe
       setMessage(disabledMessage ?? "The story is not accepting ideas right now.");
       return;
     }
-    if (participantBanned) {
-      setMessage("This device is locked out for the rest of this live story.");
-      return;
-    }
-    const submittedPrompt = prompt.trim();
-    if (!submittedPrompt) {
+    const submittedPrompt = prompt;
+    if (!submittedPrompt.trim()) {
       setMessage("Tell us what happens next.");
       return;
     }
@@ -162,7 +156,7 @@ export function PublicSubmissionForm({ sessionCode, disabled = false, disabledMe
         />
       </label>
       <button type="submit" disabled={formDisabled || !identityReady || !prompt.trim()} className="w-full rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
-        {disabled ? "Story paused" : participantBanned ? "Device locked for this story" : submitting ? "Sending…" : "Send what happens next"}
+        {disabled ? "Story paused" : submitting ? "Sending…" : "Send what happens next"}
       </button>
       {message ? <p className="rounded-3xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80" role="status" aria-live="polite">{message}</p> : null}
       {trackedStatus ? (
@@ -192,13 +186,11 @@ export function getPublicSubmissionReceipt(
 ):
   | { received: true; submissionId: string; trackedStatus: TrackedSubmissionStatus }
   | { received: false; message: string; trackedStatus: TrackedSubmissionStatus | null } {
-  if (!responseOk || payload?.status === "banned" || payload?.status === "rate-limited") {
+  if (!responseOk || payload?.status === "rate-limited") {
     return {
       received: false,
       message: payload?.error ?? payload?.message ?? "Could not submit that idea.",
-      trackedStatus: payload?.status === "banned"
-        ? createBannedTrackedStatus(payload.prompt ?? submittedPrompt, payload)
-        : null
+      trackedStatus: null
     };
   }
 
@@ -229,7 +221,7 @@ function createFallbackTrackedStatus(
     return {
       state: "rejected",
       title: "Not approved for the queue",
-      detail: fallback.message ?? "The venue-safe filter rejected this idea.",
+      detail: fallback.message ?? "This idea is no longer queued.",
       prompt,
       submittedAt: "",
       updatedAt: ""
@@ -246,29 +238,6 @@ function createFallbackTrackedStatus(
   };
 }
 
-function createBannedTrackedStatus(
-  prompt: string,
-  payload?: {
-    error?: string;
-    message?: string;
-    moderationBlockCount?: number;
-  } | null
-): TrackedSubmissionStatus {
-  return {
-    state: "banned",
-    title: "Device locked for this sequence",
-    detail:
-      payload?.error ??
-      payload?.message ??
-      "This device is locked out until the live story ends.",
-    prompt,
-    moderationBlockCount: payload?.moderationBlockCount ?? 3,
-    blocksRemaining: 0,
-    submittedAt: "",
-    updatedAt: ""
-  };
-}
-
 function renderSubmissionSteps(state: TrackedSubmissionStatus["state"]) {
   const activeIndex = (() => {
     switch (state) {
@@ -278,7 +247,6 @@ function renderSubmissionSteps(state: TrackedSubmissionStatus["state"]) {
       case "retrying":
       case "failed":
       case "blocked":
-      case "banned":
       case "provider-blocked":
       case "rejected":
         return 1;
@@ -318,7 +286,6 @@ function getStatusChipClassName(state: TrackedSubmissionStatus["state"]) {
     case "rejected":
     case "failed":
     case "blocked":
-    case "banned":
     case "provider-blocked":
       return "border border-ember/35 bg-ember/12 text-ember";
     default:

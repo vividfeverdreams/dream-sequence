@@ -48,7 +48,7 @@ const steps = [
   {
     number: "3",
     title: "The next chapter plays",
-    body: "Each idea is moderated, then turned into video from the last frame of the story. The current scene stays up until the new one is ready.",
+    body: "Each idea is turned into video, word for word, from the last frame of the story. The current scene stays up until the new one is ready.",
     mock: <QueueMock />
   }
 ];
@@ -63,8 +63,8 @@ const features = [
     body: "The idea plays with the nickname or Twitch username of whoever sent it."
   },
   {
-    title: "Moderation first",
-    body: "Every idea is checked before it can reach the screen, with limits per device."
+    title: "Word for word",
+    body: "Every idea goes to the video model exactly as it was typed, with limits per device.",
   },
   {
     title: "Always something playing",
@@ -72,7 +72,7 @@ const features = [
   },
   {
     title: "Keeps itself going",
-    body: "After a quiet minute, the story writes its own next chapter. Audience ideas always go first."
+    body: "After a quiet minute, the story moves on by itself. Audience ideas always go first.",
   },
   {
     title: "Moves with the music",

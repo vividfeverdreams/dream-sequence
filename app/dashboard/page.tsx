@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getPrimarySessionForUser } from "@/lib/session-service";
 import { getSessionSnapshot } from "@/lib/snapshot";
-import { getOpenAiConnectionStatusForUser } from "@/lib/openai-key-store";
 import { createAudioSyncRelayToken } from "@/lib/audio-sync-relay-token";
 import { getGoogleConnectionStatusForUser } from "@/lib/google-key-store";
 import { SessionSetupForm } from "@/components/session-setup-form";
@@ -44,17 +43,13 @@ export default async function DashboardPage() {
     return null;
   }
 
-  const [openAiStatus, googleStatus] = await Promise.all([
-    getOpenAiConnectionStatusForUser(user.id),
-    getGoogleConnectionStatusForUser(user.id)
-  ]);
+  const googleStatus = await getGoogleConnectionStatusForUser(user.id);
   const audioSyncRelayToken = createAudioSyncRelayToken(session.id, user.id);
 
   return (
     <DashboardShell
       initialSnapshot={snapshot}
       currentUserName={user.displayName}
-      initialOpenAiStatus={openAiStatus}
       initialGoogleStatus={googleStatus}
       audioSyncRelayToken={audioSyncRelayToken}
     />

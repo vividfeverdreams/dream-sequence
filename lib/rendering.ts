@@ -275,8 +275,6 @@ export async function failRenderJob(
     return {
       failed: renderJob.status === "failed",
       changed: false,
-      moderationBlockCount: 0,
-      banned: false
     };
   }
 
@@ -361,8 +359,6 @@ export async function failRenderJob(
     return {
       failed: false,
       changed: false,
-      moderationBlockCount: 0,
-      banned: false
     };
   }
 
@@ -377,8 +373,6 @@ export async function failRenderJob(
   return {
     failed: true,
     changed: true,
-    moderationBlockCount: 0,
-    banned: false
   };
 }
 

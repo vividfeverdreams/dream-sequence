@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import type { ValidatedSubmissionImage } from "@/lib/submission-image";
 import { extractVideoClosingFrameJpeg } from "@/lib/video-closing-frame";
 
 const demoLoopUrl = process.env.DEMO_LOOP_URL ?? "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
@@ -77,56 +75,6 @@ export async function persistVideoAsset(assetId: string, data: Buffer) {
   };
 }
 
-export async function persistSubmissionImage(
-  sessionId: string,
-  image: ValidatedSubmissionImage
-) {
-  if (!isStorageConfigured()) {
-    throw new Error(
-      "Supabase storage is not configured for approved reference images."
-    );
-  }
-
-  const extension = getSubmissionImageExtension(image.mimeType);
-  const objectPath = `submission-images/${sessionId}/${randomUUID()}.${extension}`;
-  const response = await fetch(
-    `${supabaseUrl}/storage/v1/object/${bucket}/${objectPath}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Content-Type": image.mimeType
-      },
-      body: new Uint8Array(image.data)
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Supabase reference-image upload failed (${response.status}): ${await response.text()}`
-    );
-  }
-
-  return {
-    storagePath: `${bucket}/${objectPath}`,
-    publicUrl: `${supabaseUrl}/storage/v1/object/public/${bucket}/${objectPath}`
-  };
-}
-
 export function getDemoLoopUrl() {
   return demoLoopUrl;
-}
-
-function getSubmissionImageExtension(
-  mimeType: ValidatedSubmissionImage["mimeType"]
-) {
-  switch (mimeType) {
-    case "image/jpeg":
-      return "jpg";
-    case "image/png":
-      return "png";
-    case "image/webp":
-      return "webp";
-  }
 }

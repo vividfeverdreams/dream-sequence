@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, { params }: PublicApiRouteProps
         prompt: parsed.data.prompt
       },
       {
-        status: result.status === "banned" ? 403 : result.status === "rate-limited" ? 429 : 200
+        status: result.status === "rate-limited" ? 429 : 200
       }
     );
 

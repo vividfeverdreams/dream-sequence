@@ -1,11 +1,5 @@
 import { db } from "@/lib/db";
 import {
-  getParticipantBlocksRemaining,
-  getParticipantModerationBlockCount,
-  isParticipantBanned
-} from "@/lib/participant-session";
-import { isImageModerationFailureReason } from "@/lib/image-moderation";
-import {
   getVideoModerationDiagnostic,
   getVideoModerationDiagnosticLabel,
   isVideoModerationFailureReason
@@ -13,7 +7,6 @@ import {
 
 export type PublicSubmissionState =
   | "approved"
-  | "banned"
   | "blocked"
   | "failed"
   | "queued"
@@ -32,8 +25,6 @@ export type PublicSubmissionStatus = {
   detail: string;
   prompt: string;
   referenceImageUrl?: string;
-  moderationBlockCount?: number;
-  blocksRemaining?: number;
   submittedAt: string;
   updatedAt: string;
 };
@@ -78,23 +69,12 @@ export async function getPublicSubmissionStatus(sessionCode: string, submissionI
     })
   )[0];
 
-  const intakeImageBlocked = isImageModerationFailureReason(
-    submission.approvalReason
-  );
-  const moderationBlockCount = intakeImageBlocked
-    ? await getParticipantModerationBlockCount(
-        String(session.id),
-        String(submission.senderFingerprint)
-      )
-    : 0;
-
-  return describeSubmissionStatus(submission, renderJob, moderationBlockCount);
+  return describeSubmissionStatus(submission, renderJob);
 }
 
 function describeSubmissionStatus(
   submission: any,
-  renderJob: any,
-  moderationBlockCount = 0
+  renderJob: any
 ): PublicSubmissionStatus {
   const prompt = String(submission.rawText ?? submission.normalizedText ?? "");
   const referenceImageUrl = submission.referenceImageUrl
@@ -109,31 +89,6 @@ function describeSubmissionStatus(
       ""
   ).trim();
 
-  if (
-    isImageModerationFailureReason(submission.approvalReason)
-  ) {
-    const banned = isParticipantBanned(moderationBlockCount);
-    const blocksRemaining = getParticipantBlocksRemaining(moderationBlockCount);
-
-    return {
-      state: banned ? "banned" : "blocked",
-      title: banned
-        ? "Device locked for this sequence"
-        : "Reference image blocked by safety moderation",
-      detail: banned
-        ? "This was the third reference image blocked by intake moderation, so this device cannot submit again until this live sequence ends."
-        : `The image safety filter blocked this submission. ${blocksRemaining} ${
-            blocksRemaining === 1 ? "block" : "blocks"
-          } remaining before this device is locked for this live sequence.`,
-      prompt,
-      referenceImageUrl,
-      moderationBlockCount,
-      blocksRemaining,
-      submittedAt,
-      updatedAt
-    };
-  }
-
   if (isVideoModerationFailureReason(renderJob?.failureReason)) {
     const diagnostic =
       getVideoModerationDiagnostic(renderJob?.providerFailureCode) ??
@@ -142,7 +97,7 @@ function describeSubmissionStatus(
     return {
       state: "provider-blocked",
       title: "Video provider could not render this remix",
-      detail: `${getVideoModerationDiagnosticLabel(diagnostic)} This provider-side failure did not count against your device.`,
+      detail: `${getVideoModerationDiagnosticLabel(diagnostic)} You can submit another idea.`,
       prompt,
       referenceImageUrl,
       submittedAt,
@@ -156,7 +111,7 @@ function describeSubmissionStatus(
       title: "Not approved for the queue",
       detail:
         approvalReason ||
-        "The venue-safe filter rejected this remix, so it will not be sent to the screen.",
+        "This idea is no longer queued.",
       prompt,
       referenceImageUrl,
       submittedAt,
@@ -263,7 +218,7 @@ function describeSubmissionStatus(
       title: "Approved and waiting",
       detail:
         approvalReason ||
-        "The remix passed venue-safe scoring and is waiting for an open render slot.",
+        "Your idea is waiting for an open render slot.",
       prompt,
       referenceImageUrl,
       submittedAt,
@@ -274,7 +229,7 @@ function describeSubmissionStatus(
   return {
     state: "submitted",
     title: "Received",
-    detail: "The remix text landed in the system and is being scored now.",
+    detail: "Your idea was received and is being saved to the queue.",
     prompt,
     referenceImageUrl,
     submittedAt,

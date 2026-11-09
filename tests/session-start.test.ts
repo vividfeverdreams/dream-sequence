@@ -304,18 +304,9 @@ describe("starting a session's first video", () => {
   });
 });
 
-describe("fallback remix creative prompt", () => {
-  it("continues the story without replaying its opening", () => {
-    const prompt = buildFallbackRemixPrompt({
-      basePrompt: "A molten glass city loops through ultraviolet rain."
-    });
-
-    expect(prompt).toContain("A molten glass city loops through ultraviolet rain.");
-    expect(prompt).toContain("one new, natural event");
-    expect(prompt).toContain("without restarting the opening");
-    expect(prompt).not.toContain("Follow the artist's motion and camera rules");
-    expect(prompt).not.toContain("venue-safe");
-    expect(prompt).not.toContain("calmer geometric pulse");
-    expect(prompt).not.toContain("resilient club-safe motion");
+describe("fallback remix prompt", () => {
+  it("sends the host text without adding instructions", () => {
+    const basePrompt = "A molten glass city loops through ultraviolet rain.";
+    expect(buildFallbackRemixPrompt({ basePrompt })).toBe(basePrompt);
   });
 });

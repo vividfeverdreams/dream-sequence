@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
-import { assessSubmission } from "@/lib/ai-assessment";
+import { acceptRawSubmission } from "@/lib/raw-submission";
 import { checkSubmissionRateLimit } from "@/lib/rate-limit";
 import { recordAuditEvent } from "@/lib/audit";
 import { promoteOldestReadyAsset } from "@/lib/playback-queue";
@@ -18,21 +18,6 @@ import {
   startVideoRender
 } from "@/lib/rendering";
 import {
-  assessSubmissionImage,
-  participantImageModerationBlockedReason,
-  type ImageModerationAssessment
-} from "@/lib/image-moderation";
-import {
-  getParticipantModerationBlockCount,
-  getParticipantModerationEventType,
-  getParticipantBlocksRemaining,
-  isParticipantBanned,
-  participantImageModerationEventSummary,
-  participantModerationBanThreshold
-} from "@/lib/participant-session";
-import { persistSubmissionImage } from "@/lib/storage";
-import type { ValidatedSubmissionImage } from "@/lib/submission-image";
-import {
   getSubmissionRateLimitSettings,
   submissionRateLimitConfiguredEvent
 } from "@/lib/submission-rate-limit-state";
@@ -41,7 +26,6 @@ import {
   normalizeVideoModelId,
   normalizeVideoResolution
 } from "@/lib/video-models";
-import { composeFinalProviderVideoPrompt } from "@/lib/video-prompt-budget";
 import { createIdleStoryContinuation, storyInputReceivedEvent } from "@/lib/story-continuation";
 
 type IntakeInput = {
@@ -52,7 +36,6 @@ type IntakeInput = {
   senderFingerprintSeed: string;
   participantToken?: string | null;
   messageSid?: string | null;
-  referenceImage?: ValidatedSubmissionImage | null;
 };
 
 type IntakeOptions = {
@@ -90,20 +73,6 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
           createdAt: "desc"
         },
         take: 1
-      },
-      submissions: {
-        where: {
-          status: {
-            in: ["approved", "ready", "live"]
-          }
-        },
-        include: {
-          rankingResult: true
-        },
-        orderBy: {
-          createdAt: "desc"
-        },
-        take: 8
       }
     }
   });
@@ -135,21 +104,6 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
 
   const senderFingerprint = hashValue(`${session.id}:${senderFingerprintSeed}`);
 
-  if (input.source === "web") {
-    const moderationBlockCount = await getParticipantModerationBlockCount(
-      session.id,
-      senderFingerprint
-    );
-
-    if (isParticipantBanned(moderationBlockCount)) {
-      return {
-        status: "banned" as const,
-        message: `This device is locked out for the rest of this live sequence after ${participantModerationBanThreshold} blocked reference images.`,
-        moderationBlockCount
-      };
-    }
-  }
-
   const submissionRateLimit = getSubmissionRateLimitSettings(session.auditEvents);
   const rateLimit = await checkSubmissionRateLimit(
     session.id,
@@ -164,7 +118,7 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
     };
   }
 
-  // Record arrival before slow moderation so an automatic continuation cannot
+  // Record arrival before saving the idea so an automatic continuation cannot
   // mistake a viewer currently submitting an idea for an idle audience.
   await recordAuditEvent({
     type: storyInputReceivedEvent,
@@ -173,78 +127,40 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
   });
 
   const normalizedText = normalizePromptText(input.prompt);
-  const recentWinningPrompts = session.submissions
-    .map((item: any) => item.rankingResult?.winningPrompt)
-    .filter((value: any): value is string => Boolean(value));
-  const [assessment, imageAssessment] = await Promise.all([
-    assessSubmission({
-      submissionText: session.artistControlEnabled
-        ? normalizedText
-        : input.prompt.trim(),
-      session,
-      recentWinningPrompts
-    }),
-    input.referenceImage
-      ? assessSubmissionImage({
-          image: input.referenceImage,
-          userId: String(session.userId)
-        })
-      : Promise.resolve<ImageModerationAssessment | null>(null)
-  ]);
-  const imageRejected = imageAssessment?.decision === "rejected";
-  const decision = imageRejected ? "rejected" : assessment.decision;
-  const approvalReason = imageRejected
-    ? imageAssessment.explanation
-    : assessment.approvalReason;
-  const moderationFlags = imageRejected
-    ? [...new Set([...assessment.flags, ...imageAssessment.flags])]
-    : assessment.flags;
-  const moderationExplanation = imageAssessment
-    ? `${imageAssessment.explanation} ${assessment.explanation}`
-    : assessment.explanation;
-  const storedImage =
-    input.referenceImage && decision === "approved"
-      ? await persistSubmissionImage(session.id, input.referenceImage)
-      : null;
+  const assessment = acceptRawSubmission(input.prompt);
 
   const submission = await db.$transaction(async (tx: any) => {
     const created = await tx.promptSubmission.create({
-    data: {
-      sessionId: session.id,
-      source: input.source,
-      sender: input.sender ? normalizePromptText(input.sender) : null,
-      senderFingerprint,
-      messageSid: input.messageSid || null,
-      rawText: input.prompt,
-      normalizedText,
-      referenceImageUrl: storedImage?.publicUrl ?? null,
-      referenceImageStoragePath: storedImage?.storagePath ?? null,
-      referenceImageMimeType:
-        storedImage && input.referenceImage
-          ? input.referenceImage.mimeType
-          : null
-    }
-  });
+      data: {
+        sessionId: session.id,
+        source: input.source,
+        sender: input.sender ? normalizePromptText(input.sender) : null,
+        senderFingerprint,
+        messageSid: input.messageSid || null,
+        rawText: input.prompt,
+        normalizedText
+      }
+    });
 
     await tx.moderationResult.create({
       data: {
         submissionId: created.id,
-        decision,
-        score: imageRejected ? 0 : assessment.score,
-        flags: JSON.stringify(moderationFlags),
-        explanation: moderationExplanation
+        decision: assessment.decision,
+        score: assessment.score,
+        flags: JSON.stringify(assessment.flags),
+        explanation: assessment.explanation
       }
     });
 
     await tx.rankingResult.create({
       data: {
         submissionId: created.id,
-        score: imageRejected ? 0 : assessment.score,
-        noveltyScore: imageRejected ? 0 : assessment.noveltyScore,
-        cohesionScore: imageRejected ? 0 : assessment.cohesionScore,
-        remixDeltaScore: imageRejected ? 0 : assessment.remixDeltaScore,
-        winningPrompt: imageRejected ? input.prompt.trim() : assessment.winningPrompt,
-        explanation: approvalReason
+        score: assessment.score,
+        noveltyScore: assessment.noveltyScore,
+        cohesionScore: assessment.cohesionScore,
+        remixDeltaScore: assessment.remixDeltaScore,
+        winningPrompt: assessment.winningPrompt,
+        explanation: assessment.approvalReason
       }
     });
 
@@ -253,12 +169,12 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
         id: created.id
       },
       data: {
-        status: decision === "approved" ? "approved" : "rejected",
-        approvalReason
+        status: "approved",
+        approvalReason: assessment.approvalReason
       }
     });
     // A fresh audience idea supersedes an automatic prompt that has not started
-    // rendering yet, including one still being written by the text provider.
+    // rendering yet, including one still being prepared by another worker.
     await tx.promptSubmission.updateMany({
       where: {
         sessionId: session.id,
@@ -273,13 +189,13 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
 
   try {
     await recordAuditEvent({
-      type: decision === "approved" ? "submission.approved" : "submission.rejected",
+      type: "submission.approved",
       summary: `Processed ${input.source} submission`,
-      details: moderationExplanation,
+      details: assessment.explanation,
       sessionId: session.id
     });
   } catch {
-    // The receipt and moderation decision are already committed. An optional
+    // The receipt is already committed. An optional
     // activity-log write must not make the audience retry a saved idea.
     console.warn("[submission-intake] activity logging failed after receipt was saved", {
       sessionId: session.id,
@@ -287,59 +203,23 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
     });
   }
 
-  if (imageRejected) {
-    await recordAuditEvent({
-      type: getParticipantModerationEventType(senderFingerprint),
-      summary: participantImageModerationEventSummary,
-      details: `${participantImageModerationBlockedReason} ${imageAssessment.flags.join(", ")}`,
-      sessionId: session.id
-    });
-    const moderationBlockCount = await getParticipantModerationBlockCount(
-      session.id,
-      senderFingerprint
-    );
-    const banned = isParticipantBanned(moderationBlockCount);
-    const blocksRemaining = getParticipantBlocksRemaining(
-      moderationBlockCount
-    );
-
-    return {
-      status: banned ? ("banned" as const) : ("rejected" as const),
-      message: banned
-        ? "This was the third blocked reference image, so this device is locked for the rest of the live sequence."
-        : `That photo did not pass venue-safe image moderation. ${blocksRemaining} ${
-            blocksRemaining === 1 ? "strike" : "strikes"
-          } remaining before this device is locked.`,
-      submissionId: submission.id,
-      moderationBlockCount,
-      blocksRemaining
-    };
-  }
-
-  if (decision === "approved") {
-    if (options.scheduleSelection) {
-      try {
-        options.scheduleSelection(session.id);
-      } catch {
-        // The saved idea remains eligible for the next reconciliation pass even
-        // when a response-bound background task could not be scheduled.
-        console.warn("[submission-intake] selection scheduling will retry", {
-          sessionId: session.id
-        });
-      }
-    } else {
-      await attemptAutomatedSelection(session.id);
+  if (options.scheduleSelection) {
+    try {
+      options.scheduleSelection(session.id);
+    } catch {
+      // The saved idea remains eligible for the next reconciliation pass even
+      // when a response-bound background task could not be scheduled.
+      console.warn("[submission-intake] selection scheduling will retry", {
+        sessionId: session.id
+      });
     }
+  } else {
+    await attemptAutomatedSelection(session.id);
   }
 
   return {
-    status: decision,
-    message:
-      decision === "approved"
-        ? session.artistControlEnabled
-          ? "Your idea is in the story queue."
-          : "Your idea is in the story queue."
-        : "That idea did not pass the story safety check.",
+    status: assessment.decision,
+    message: "Your idea is in the story queue.",
     submissionId: submission.id
   };
 }
@@ -635,13 +515,16 @@ export async function queueAutomatedRender(
         videoModel,
         session.videoDurationSeconds
       );
+      const rawPrompt = mode === "seed"
+        ? session.basePrompt
+        : (sourceSubmission?.rawText?.trim() || promptText);
       const outputAsset = await tx.visualAsset.create({
         data: {
           sessionId,
           sourceSubmissionId: submissionId,
           kind: mode,
           title: mode === "seed" ? "The story begins" : "What happens next",
-          promptText,
+          promptText: rawPrompt,
           durationSeconds,
           status: "processing"
         }
@@ -654,7 +537,7 @@ export async function queueAutomatedRender(
           outputAssetId: outputAsset.id,
           mode,
           status: "queued",
-          promptText
+          promptText: rawPrompt
         }
       });
 
@@ -702,17 +585,9 @@ export async function queueAutomatedRender(
   } = queuedRender;
   const mode = requestedMode;
 
-  const creativePrompt = mode === "seed"
+  const providerPrompt = mode === "seed"
     ? session.basePrompt
-    : [
-        `What happens next: ${sourceSubmission?.rawText?.trim() || promptText}`,
-        `Story opening (background only; do not restart): ${session.basePrompt}`
-      ].join(" ");
-  const providerPrompt = composeFinalProviderVideoPrompt({
-    creativePrompt,
-    includeArtistMotionRules: false,
-    openingFrameAttached: mode === "remix"
-  });
+    : (sourceSubmission?.rawText?.trim() || promptText);
 
   try {
     await db.$transaction(async (tx: any) => {

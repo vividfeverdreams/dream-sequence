@@ -71,8 +71,8 @@ export async function startFalVideoRender(input: {
   if (!isVideoModelId(model)) throw new FalApiError("H3 Max is the only supported video model.", { status: 400 });
   if (!isVideoModelDurationSupported(model, duration)) throw new FalApiError("H3 Max clips must be 5–15 whole seconds.", { status: 400 });
   if (!isVideoResolution(resolution)) throw new FalApiError("Choose 480P, 768P, or 1080P for H3 Max.", { status: 400 });
-  const prompt = input.prompt.trim();
-  if (!prompt || prompt.length > 50_000) throw new FalApiError("H3 Max requires a prompt between 1 and 50,000 characters.", { status: 400 });
+  const prompt = input.prompt;
+  if (!prompt.trim() || prompt.length > 50_000) throw new FalApiError("H3 Max requires a prompt between 1 and 50,000 characters.", { status: 400 });
 
   let openingFrame: string | undefined;
   if (input.mode === "remix") {
@@ -93,8 +93,8 @@ export async function startFalVideoRender(input: {
       prompt,
       duration,
       resolution,
-      prompt_expansion_mode: "balanced",
-      enable_safety_checker: true,
+      prompt_expansion_mode: "disabled",
+      enable_safety_checker: false,
       ...(openingFrame ? { image_url: openingFrame } : {})
     })
     });

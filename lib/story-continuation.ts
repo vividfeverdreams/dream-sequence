@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { assessSubmission } from "@/lib/ai-assessment";
-import { generateStoryContinuationPrompt } from "@/lib/story-continuation-prompt";
+import { acceptRawSubmission } from "@/lib/raw-submission";
+import { buildIdleStoryBeat } from "@/lib/story-continuation-prompt";
 import { hashValue, normalizePromptText } from "@/lib/utils";
 
 export const storyContinuationIntervalMs = 60_000;
@@ -55,7 +55,7 @@ export async function createIdleStoryContinuation(sessionId: string) {
     );
     if (now.getTime() - lastActivityAt < storyContinuationIntervalMs) return null;
 
-    // A worker interrupted during its bounded text request must not leave a
+    // A worker interrupted while preparing a continuation must not leave a
     // permanent pending draft behind. Never reclaim a draft younger than a minute.
     await tx.promptSubmission.updateMany({
       where: { sessionId, source: automaticSubmissionSource, status: "submitted", createdAt: { lte: cutoff } },
@@ -102,28 +102,11 @@ export async function createIdleStoryContinuation(sessionId: string) {
     ]);
     const recentPrompts = recentClips.reverse().map((clip) => clip.submission?.rawText || clip.promptText);
     if (!recentPrompts.length) recentPrompts.push(session.playbackState!.currentAsset!.promptText);
-    const creativeContext = {
-      userId: session.userId,
-      artistName: session.artistName,
-      trackName: session.trackName,
-      basePrompt: session.basePrompt,
-      creativeBible: session.creativeBible,
-      allowedMotifs: session.allowedMotifs,
-      bannedTerms: session.bannedTerms,
-      colorPalette: session.colorPalette,
-      motionRules: session.motionRules,
-      artistControlEnabled: session.artistControlEnabled,
-      venueSafeMode: session.venueSafeMode
-    };
-    const prompt = await generateStoryContinuationPrompt({ session: creativeContext, recentPrompts, continuationNumber });
-    const assessment = await assessSubmission({
-      submissionText: prompt,
-      session: creativeContext,
-      recentWinningPrompts: recentPrompts
-    });
+    const prompt = buildIdleStoryBeat({ recentPrompts, continuationNumber });
+    const assessment = acceptRawSubmission(prompt);
 
     return await db.$transaction(async (tx) => {
-      // Audience input arriving while text generation runs takes priority. Pause,
+      // Audience input arriving while a continuation is prepared takes priority. Pause,
       // stop and a resumed/restarted session also invalidate the old draft.
       const stillIdle = await tx.dJSession.findFirst({
         where: {

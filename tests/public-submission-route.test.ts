@@ -18,12 +18,21 @@ describe("What happens next intake", () => {
     vi.clearAllMocks();
     mocks.ingestSubmission.mockResolvedValue({ status: "approved", message: "Your idea is in the story queue.", submissionId: "idea-1" });
   });
-  it("passes the viewer's original story continuation into moderation", async () => {
+  it("passes the viewer's original story continuation into the queue", async () => {
     const response = await submit(input);
     expect(response.status).toBe(200);
     expect(mocks.ingestSubmission).toHaveBeenCalledWith(expect.objectContaining({ sessionCode: "LIVE01", source: "web", prompt: input.prompt, sender: "Neon Shark", participantToken: input.participantToken }), expect.objectContaining({ scheduleSelection: expect.any(Function) }));
     expect(await response.json()).toMatchObject({ submissionId: "idea-1", prompt: input.prompt });
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+  });
+  it("preserves the submitted text in storage intake and the receipt", async () => {
+    const prompt = "  A river of blood becomes roses.\nKeep  these words!  ";
+    const response = await submit({ ...input, prompt });
+    expect(response.status).toBe(200);
+    expect(mocks.ingestSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt }), expect.any(Object)
+    );
+    expect(await response.json()).toMatchObject({ status: "approved", prompt });
   });
   it("keeps an existing participant cookie so changing client tokens does not bypass limits", async () => {
     await submit(input, "dream_sequence_participant=existing-participant-12345");

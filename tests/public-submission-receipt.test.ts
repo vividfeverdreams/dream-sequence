@@ -40,7 +40,7 @@ describe("public submission receipts", () => {
 
   it("shows a saved rejection as rejected", () => {
     expect(getPublicSubmissionReceipt(true, {
-      status: "rejected", submissionId: "idea-1", message: "That idea did not pass the story safety check."
+      status: "rejected", submissionId: "idea-1", message: "This idea is no longer queued."
     }, prompt)).toMatchObject({
       received: true,
       submissionId: "idea-1",
@@ -48,12 +48,4 @@ describe("public submission receipts", () => {
     });
   });
 
-  it("keeps a blocked device locked without claiming queue acceptance", () => {
-    expect(getPublicSubmissionReceipt(false, {
-      status: "banned", message: "This device is locked for the rest of the story."
-    }, prompt)).toMatchObject({
-      received: false,
-      trackedStatus: { state: "banned", prompt }
-    });
-  });
 });

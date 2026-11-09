@@ -31,7 +31,7 @@ describe("H3 Max through fal.ai", () => {
     const init = fetchMock.mock.calls[0]?.[1];
     expect(init.headers.Authorization).toBe(`Key ${apiKey}`);
     expect(init.redirect).toBe("error");
-    expect(JSON.parse(init.body)).toEqual({ prompt: "A doorway opens", duration: 12, resolution: "1080P", prompt_expansion_mode: "balanced", enable_safety_checker: true });
+    expect(JSON.parse(init.body)).toEqual({ prompt: "A doorway opens", duration: 12, resolution: "1080P", prompt_expansion_mode: "disabled", enable_safety_checker: false });
     expect(mocks.extractVideoClosingFrameJpeg).not.toHaveBeenCalled();
   });
 
@@ -45,6 +45,19 @@ describe("H3 Max through fal.ai", () => {
     expect(fetchMock.mock.calls[0]?.[1].headers).toBeUndefined();
     expect(mocks.extractVideoClosingFrameJpeg).toHaveBeenCalledWith(Buffer.from("previous-clip"));
     expect(JSON.parse(fetchMock.mock.calls[1]?.[1].body)).toMatchObject({ image_url: `data:image/jpeg;base64,${Buffer.from("exact-final-frame").toString("base64")}`, duration: 5, resolution: "480P" });
+  });
+
+  it.each(["seed", "remix"] as const)("sends %s text to fal exactly, with expansion and the optional checker disabled", async (mode) => {
+    const prompt = "  A river of blood becomes roses.\nKeep  the punctuation!  ";
+    const fetchMock = vi.fn();
+    if (mode === "remix") fetchMock.mockResolvedValueOnce(new Response(Buffer.from("previous-clip")));
+    fetchMock.mockResolvedValueOnce(json({ request_id: "raw-job" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await startFalVideoRender({ mode, prompt, apiKey, sourceVideoUrl: "https://storage.example.com/previous.mp4" });
+    const body = JSON.parse(fetchMock.mock.calls.at(-1)?.[1].body);
+    expect(body.prompt).toBe(prompt);
+    expect(body.prompt_expansion_mode).toBe("disabled");
+    expect(body.enable_safety_checker).toBe(false);
   });
 
   it("never submits a text-only continuation after decoding fails", async () => {
