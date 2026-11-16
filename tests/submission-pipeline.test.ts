@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => {
     updateSubmission: vi.fn(),
     createModeration: vi.fn(),
     createRanking: vi.fn(),
-    checkSubmissionRateLimit: vi.fn(),
     recordAuditEvent: vi.fn(),
     claimSession: vi.fn(),
     createAsset: vi.fn(),
@@ -107,10 +106,6 @@ vi.mock("@/lib/audit", () => ({
   recordAuditEvent: mocks.recordAuditEvent
 }));
 
-vi.mock("@/lib/rate-limit", () => ({
-  checkSubmissionRateLimit: mocks.checkSubmissionRateLimit
-}));
-
 vi.mock("@/lib/story-continuation", () => ({
   createIdleStoryContinuation: mocks.createIdleStoryContinuation,
   storyInputReceivedEvent: "story.input_received"
@@ -141,10 +136,9 @@ describe("submission receipt scheduling", () => {
     vi.clearAllMocks();
     mocks.findSession.mockResolvedValue({
       id: "session-1", status: "live", audienceMode: "twitch",
-      artistControlEnabled: true, auditEvents: [], submissions: []
+      artistControlEnabled: true, submissions: []
     });
     mocks.createSubmission.mockResolvedValue({ id: "submission-1" });
-    mocks.checkSubmissionRateLimit.mockResolvedValue({ allowed: true });
 
   });
 

@@ -16,11 +16,6 @@ import {
   showWordmarkOverlayDisabledEvent,
   showWordmarkOverlayEnabledEvent
 } from "@/lib/show-overlay-state";
-import {
-  serializeSubmissionRateLimitSettings,
-  submissionRateLimitConfiguredEvent,
-  submissionRateLimitWindowMinutes
-} from "@/lib/submission-rate-limit-state";
 import { createSessionCode, normalizePromptText } from "@/lib/utils";
 import { queueAutomatedRender } from "@/lib/submission-pipeline";
 import { reconcileRenderJob } from "@/lib/rendering";
@@ -54,8 +49,6 @@ type SessionInput = {
   videoResolution?: string;
   audienceMode?: "web" | "twitch";
   twitchChannel?: string;
-  submissionRateLimitEnabled: boolean;
-  submissionRateLimitCount: number;
 };
 
 export const initialGenerationQueueFailureMessage =
@@ -108,19 +101,6 @@ export async function createDjSession(userId: string, input: SessionInput) {
   await recordAuditEvent({
     type: "session.created",
     summary: `Created session ${session.name}`,
-    sessionId: session.id,
-    userId
-  });
-
-  await recordAuditEvent({
-    type: submissionRateLimitConfiguredEvent,
-    summary: input.submissionRateLimitEnabled
-      ? `Limited each device to ${input.submissionRateLimitCount} remixes per ${submissionRateLimitWindowMinutes} minutes`
-      : "Left the device submission limit off",
-    details: serializeSubmissionRateLimitSettings({
-      enabled: input.submissionRateLimitEnabled,
-      count: input.submissionRateLimitCount
-    }),
     sessionId: session.id,
     userId
   });

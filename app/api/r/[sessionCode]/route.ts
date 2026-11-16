@@ -84,15 +84,10 @@ export async function POST(request: NextRequest, { params }: PublicApiRouteProps
       }
     );
 
-    const response = NextResponse.json(
-      {
-        ...result,
-        prompt: parsed.data.prompt
-      },
-      {
-        status: result.status === "rate-limited" ? 429 : 200
-      }
-    );
+    const response = NextResponse.json({
+      ...result,
+      prompt: parsed.data.prompt
+    });
 
     if (savedParticipantToken.length < 16) {
       response.cookies.set(participantDeviceCookieName, participantToken, {

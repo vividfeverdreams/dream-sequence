@@ -34,21 +34,13 @@ describe("What happens next intake", () => {
     );
     expect(await response.json()).toMatchObject({ status: "approved", prompt });
   });
-  it("keeps an existing participant cookie so changing client tokens does not bypass limits", async () => {
+  it("keeps an existing participant cookie across client token changes", async () => {
     await submit(input, "dream_sequence_participant=existing-participant-12345");
     expect(mocks.ingestSubmission).toHaveBeenCalledWith(expect.objectContaining({participantToken: "existing-participant-12345"}), expect.any(Object));
   });
   it("uses Guest when a nickname is omitted", async () => {
     await submit({ prompt: input.prompt, participantToken: input.participantToken });
     expect(mocks.ingestSubmission).toHaveBeenCalledWith(expect.objectContaining({sender: "Guest"}), expect.any(Object));
-  });
-  it("reports rate limits as an unsuccessful request without a saved receipt", async () => {
-    mocks.ingestSubmission.mockResolvedValue({ status: "rate-limited", message: "Please wait before sending another idea." });
-    const response = await submit(input);
-    expect(response.status).toBe(429);
-    expect(response.ok).toBe(false);
-    expect(await response.json()).toEqual({ status: "rate-limited", message: "Please wait before sending another idea.", prompt: input.prompt });
-    expect(mocks.after).not.toHaveBeenCalled();
   });
   it("returns the saved receipt before starting video preparation", async () => {
     mocks.ingestSubmission.mockImplementation(async (_input, options) => {

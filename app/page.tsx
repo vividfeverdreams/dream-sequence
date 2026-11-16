@@ -64,7 +64,7 @@ const features = [
   },
   {
     title: "Word for word",
-    body: "Every idea goes to the video model exactly as it was typed, with limits per device.",
+    body: "Every idea goes to the video model exactly as it was typed.",
   },
   {
     title: "Always something playing",

@@ -14,7 +14,7 @@ const validSession = {
 describe("story setup", () => {
   it("requires only the story opening and supplies valid defaults", () => {
     const result = sessionFormSchema.parse({ basePrompt: "  A fox discovers a door in the moon.  " });
-    expect(result).toMatchObject({ basePrompt: validSession.basePrompt, videoModel: "h3_max", videoDurationSeconds: 5, videoResolution: "768P", audienceMode: "web", submissionRateLimitEnabled: true });
+    expect(result).toMatchObject({ basePrompt: validSession.basePrompt, videoModel: "h3_max", videoDurationSeconds: 5, videoResolution: "768P", audienceMode: "web" });
   });
   it.each([5, 10, 15])("accepts a supported %s-second clip", (videoDurationSeconds) => {
     expect(sessionFormSchema.safeParse({ ...validSession, videoDurationSeconds }).success).toBe(true);

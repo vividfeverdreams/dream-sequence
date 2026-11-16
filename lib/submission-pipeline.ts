@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { acceptRawSubmission } from "@/lib/raw-submission";
-import { checkSubmissionRateLimit } from "@/lib/rate-limit";
 import { recordAuditEvent } from "@/lib/audit";
 import { promoteOldestReadyAsset } from "@/lib/playback-queue";
 import {
@@ -17,10 +16,6 @@ import {
   reconcileRenderJob,
   startVideoRender
 } from "@/lib/rendering";
-import {
-  getSubmissionRateLimitSettings,
-  submissionRateLimitConfiguredEvent
-} from "@/lib/submission-rate-limit-state";
 import {
   normalizeVideoDurationSecondsForModel,
   normalizeVideoModelId,
@@ -64,16 +59,7 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
       code: input.sessionCode
     },
     include: {
-      playbackState: true,
-      auditEvents: {
-        where: {
-          type: submissionRateLimitConfiguredEvent
-        },
-        orderBy: {
-          createdAt: "desc"
-        },
-        take: 1
-      }
+      playbackState: true
     }
   });
 
@@ -103,20 +89,6 @@ export async function ingestSubmission(input: IntakeInput, options: IntakeOption
   }
 
   const senderFingerprint = hashValue(`${session.id}:${senderFingerprintSeed}`);
-
-  const submissionRateLimit = getSubmissionRateLimitSettings(session.auditEvents);
-  const rateLimit = await checkSubmissionRateLimit(
-    session.id,
-    senderFingerprint,
-    submissionRateLimit.enabled ? submissionRateLimit.count : null
-  );
-
-  if (!rateLimit.allowed) {
-    return {
-      status: "rate-limited" as const,
-      message: rateLimit.reason ?? "Please wait before sending another remix."
-    };
-  }
 
   // Record arrival before saving the idea so an automatic continuation cannot
   // mistake a viewer currently submitting an idea for an idle audience.

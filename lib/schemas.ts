@@ -41,9 +41,7 @@ export const sessionFormSchema = z.object({
   videoDurationSeconds: z.number().int("Clip length must be a whole number of seconds.")
     .default(getVideoModelDefinition(defaultVideoModelId).defaultDurationSeconds),
   videoResolution: z.enum(videoResolutions).default(defaultVideoResolution),
-  audienceMode: z.enum(["web", "twitch"]).default("web"),
-  submissionRateLimitEnabled: z.boolean().default(true),
-  submissionRateLimitCount: z.number().int().min(1).max(20).default(3)
+  audienceMode: z.enum(["web", "twitch"]).default("web")
 }).superRefine((session, context) => {
   if (!isVideoModelDurationSupported(session.videoModel, session.videoDurationSeconds)) {
     const model = getVideoModelDefinition(session.videoModel);
